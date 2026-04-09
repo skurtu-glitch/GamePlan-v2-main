@@ -22,12 +22,27 @@ import { getUpgradeImpact, getUpgradeImpactStats } from "@/lib/upgrade-impact"
 import { getOptimizerPlanById } from "@/lib/optimizer-plans"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
+import { useDemoUser } from "@/components/providers/demo-user-provider"
+import {
+  AnalyticsEvent,
+  analyticsBase,
+  trackEvent,
+} from "@/lib/analytics"
+import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import type { OptimizerScope } from "@/lib/optimizer-plans"
 import { cn } from "@/lib/utils"
+
+function scopeFromPlanId(planId: string): OptimizerScope {
+  if (planId.startsWith("blues")) return "blues"
+  if (planId.startsWith("cardinals")) return "cardinals"
+  return "both"
+}
 
 export default function UpgradeImpactPage({ params }: { params: Promise<{ upgradeId: string }> }) {
   const { upgradeId } = use(params)
   const router = useRouter()
-  
+  const { state } = useDemoUser()
+
   const upgrade = getUpgradeImpact(upgradeId)
   
   if (!upgrade) {
@@ -49,6 +64,8 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
 
   const fromPlan = getOptimizerPlanById(upgrade.fromPlanId)
   const toPlan = getOptimizerPlanById(upgrade.toPlanId)
+  const scope = scopeFromPlanId(upgrade.toPlanId)
+  const recs = classifyRecommendedPlans(scope, state)
   const upgradedBundlePromo = toPlan ? getPlanBundlePromoSummary(toPlan) : null
   const introUpgradeStepMo =
     upgradedBundlePromo?.showPromoLine &&
@@ -272,7 +289,21 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
         </section>
 
         {/* Secondary CTA */}
-        <Link href={`/plans/${upgrade.toPlanId}`}>
+        <Link
+          href={`/plans/${upgrade.toPlanId}`}
+          onClick={() =>
+            trackEvent(AnalyticsEvent.comparePlansClick, {
+              ...analyticsBase("upgrade_impact", state, {
+                href: `/plans/${upgrade.toPlanId}`,
+                label: "view_full_plan_details",
+                scope,
+                plan_id: upgrade.toPlanId,
+              }),
+              upgrade_id: upgradeId,
+              recommended_plan_id: recs.bestValuePlanId ?? undefined,
+            })
+          }
+        >
           <Button variant="outline" className="w-full gap-2">
             View Full Plan Details
             <ChevronRight className="size-4" />
@@ -290,6 +321,18 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
             <Link
               href={`/plans/${upgrade.toPlanId}`}
               className="flex w-full items-center justify-center gap-2"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.upgradeClick, {
+                  ...analyticsBase("upgrade_impact", state, {
+                    href: `/plans/${upgrade.toPlanId}`,
+                    label: "upgrade_sticky_cta",
+                    scope,
+                    plan_id: upgrade.toPlanId,
+                  }),
+                  upgrade_id: upgradeId,
+                  recommended_plan_id: recs.bestValuePlanId ?? undefined,
+                })
+              }
             >
               <Check className="size-5" />
               Upgrade to {upgrade.toPlanName}

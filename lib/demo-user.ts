@@ -1,3 +1,9 @@
+export type UserSubscription = {
+  serviceId: string
+  /** Catalog or provider tier label when known (e.g. “premium”, “with-ads”). */
+  planTier?: string
+}
+
 export interface DemoLocation {
   city: string
   state: string
@@ -10,29 +16,105 @@ export interface DemoUserPreferences {
 }
 
 export interface DemoUserState {
+  /**
+   * Canonical entitlements for MVP+. Prefer updating subscriptions; `connectedServiceIds` is kept in
+   * lockstep for existing resolver/optimizer code paths.
+   */
+  subscriptions: UserSubscription[]
+  /**
+   * Derived from {@link DemoUserState.subscriptions} (unique `serviceId` list, stable order).
+   * Retained for backward compatibility with `resolveGameAccess`, optimizers, and pricing helpers.
+   */
   connectedServiceIds: string[]
   location: DemoLocation
   preferences: DemoUserPreferences
 }
 
-export const DEMO_USER_STORAGE_KEY = "gameplan-demo-user-v1"
+/** Current persisted shape (v2). Legacy v1 JSON is still read by the provider. */
+export const DEMO_USER_STORAGE_KEY = "gameplan-demo-user-v2"
 
-export const defaultDemoUserState: DemoUserState = {
-  connectedServiceIds: ["espn-plus", "team-radio"],
-  location: {
-    city: "St. Louis",
-    state: "MO",
-    marketLabel: "St. Louis market (Blues / Cardinals)",
-  },
-  preferences: {
-    displayName: "Elliott",
-  },
-}
+/** @deprecated Read for one-time migration only. */
+export const DEMO_USER_STORAGE_KEY_LEGACY = "gameplan-demo-user-v1"
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null
 }
 
+function parseSubscriptionsArray(raw: unknown): UserSubscription[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: UserSubscription[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const serviceId = typeof item.serviceId === "string" ? item.serviceId.trim() : ""
+    if (!serviceId) continue
+    const planTier =
+      typeof item.planTier === "string" && item.planTier.trim()
+        ? item.planTier.trim()
+        : undefined
+    out.push(planTier ? { serviceId, planTier } : { serviceId })
+  }
+  return out
+}
+
+function dedupeSubscriptions(subs: UserSubscription[]): UserSubscription[] {
+  const byId = new Map<string, UserSubscription>()
+  for (const s of subs) {
+    const id = s.serviceId
+    const prev = byId.get(id)
+    if (!prev) {
+      byId.set(id, { ...s })
+      continue
+    }
+    const tier = s.planTier ?? prev.planTier
+    byId.set(id, tier ? { serviceId: id, planTier: tier } : { serviceId: id })
+  }
+  return Array.from(byId.values())
+}
+
+/**
+ * Ensures `subscriptions` and `connectedServiceIds` agree. If only `connectedServiceIds` is
+ * populated, migrations should run before this; otherwise ids are taken from subscriptions.
+ */
+export function withSyncedSubscriptionFields(state: DemoUserState): DemoUserState {
+  const subs = dedupeSubscriptions(
+    state.subscriptions.length > 0
+      ? state.subscriptions
+      : state.connectedServiceIds.map((serviceId) => ({ serviceId }))
+  )
+  const connectedServiceIds = subs.map((s) => s.serviceId)
+  return {
+    ...state,
+    subscriptions: subs,
+    connectedServiceIds,
+  }
+}
+
+export function defaultDemoUserCore(): Omit<DemoUserState, "subscriptions" | "connectedServiceIds"> {
+  return {
+    location: {
+      city: "St. Louis",
+      state: "MO",
+      marketLabel: "St. Louis market (Blues / Cardinals)",
+    },
+    preferences: {
+      displayName: "Elliott",
+    },
+  }
+}
+
+export const defaultDemoUserState: DemoUserState = withSyncedSubscriptionFields({
+  subscriptions: [{ serviceId: "espn-plus" }, { serviceId: "team-radio" }],
+  connectedServiceIds: [],
+  ...defaultDemoUserCore(),
+})
+
+/**
+ * Merge persisted JSON into a full `DemoUserState`.
+ *
+ * Migration:
+ * - v2 / v1 objects with `subscriptions` array → normalize (empty array is valid).
+ * - Legacy objects with only `connectedServiceIds` → lift to `{ serviceId }[]`.
+ */
 export function mergeDemoUserState(parsed: unknown): DemoUserState {
   const base = defaultDemoUserState
   if (!isRecord(parsed)) return { ...base }
@@ -40,10 +122,23 @@ export function mergeDemoUserState(parsed: unknown): DemoUserState {
   const loc = isRecord(parsed.location) ? parsed.location : {}
   const prefs = isRecord(parsed.preferences) ? parsed.preferences : {}
 
-  return {
-    connectedServiceIds: Array.isArray(parsed.connectedServiceIds)
-      ? parsed.connectedServiceIds.filter((id): id is string => typeof id === "string")
-      : [...base.connectedServiceIds],
+  const subsFromField =
+    "subscriptions" in parsed ? parseSubscriptionsArray(parsed.subscriptions) : undefined
+
+  const legacyIds = Array.isArray(parsed.connectedServiceIds)
+    ? parsed.connectedServiceIds.filter((id): id is string => typeof id === "string")
+    : undefined
+
+  const subscriptions: UserSubscription[] =
+    subsFromField !== undefined
+      ? subsFromField
+      : legacyIds && legacyIds.length > 0
+        ? legacyIds.map((serviceId) => ({ serviceId }))
+        : [...base.subscriptions]
+
+  const draft: DemoUserState = {
+    subscriptions,
+    connectedServiceIds: [],
     location: {
       city: typeof loc.city === "string" ? loc.city : base.location.city,
       state: typeof loc.state === "string" ? loc.state : base.location.state,
@@ -52,7 +147,23 @@ export function mergeDemoUserState(parsed: unknown): DemoUserState {
     },
     preferences: {
       displayName:
-        typeof prefs.displayName === "string" ? prefs.displayName : base.preferences.displayName,
+        typeof prefs.displayName === "string"
+          ? prefs.displayName
+          : base.preferences.displayName,
     },
   }
+
+  return withSyncedSubscriptionFields(draft)
+}
+
+/** Useful when simulating “what if user only had these service ids?” */
+export function demoUserWithConnectedServiceIds(
+  base: DemoUserState,
+  serviceIds: string[]
+): DemoUserState {
+  return withSyncedSubscriptionFields({
+    ...base,
+    subscriptions: serviceIds.map((serviceId) => ({ serviceId })),
+    connectedServiceIds: [...serviceIds],
+  })
 }

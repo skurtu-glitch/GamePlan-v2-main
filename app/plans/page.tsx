@@ -24,6 +24,11 @@ import {
 import { formatServiceIdList } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
+import {
+  AnalyticsEvent,
+  analyticsBase,
+  trackEvent,
+} from "@/lib/analytics"
 
 function optimizerRoleExplanation(
   planId: string,
@@ -94,6 +99,16 @@ export default function PlansPage() {
           <Link
             href="/settings/services"
             className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-accent"
+            onClick={() =>
+              trackEvent(AnalyticsEvent.connectedServicesClick, {
+                ...analyticsBase("plans", state, {
+                  href: "/settings/services",
+                  label: "update_connected_services",
+                  scope: selectedTeam,
+                }),
+                recommended_plan_id: bestValuePlanId ?? undefined,
+              })
+            }
           >
             Update Connected Services
             <ChevronRight className="size-4" />
@@ -208,7 +223,21 @@ export default function PlansPage() {
                     </div>
                     
                     {/* Watchable Games - Clickable */}
-                    <Link href={`/plans/${plan.id}`} className="block">
+                    <Link
+                      href={`/plans/${plan.id}`}
+                      className="block"
+                      onClick={() =>
+                        trackEvent(AnalyticsEvent.comparePlansClick, {
+                          ...analyticsBase("plans", state, {
+                            href: `/plans/${plan.id}`,
+                            label: "watchable_tile",
+                            scope: selectedTeam,
+                            plan_id: plan.id,
+                          }),
+                          recommended_plan_id: bestValuePlanId ?? undefined,
+                        })
+                      }
+                    >
                       <div className="rounded-xl bg-secondary/50 p-3 text-center transition-colors hover:bg-accent/10">
                         <div className="flex items-center justify-center gap-1">
                           <Tv className="size-3 text-muted-foreground" />
@@ -253,7 +282,21 @@ export default function PlansPage() {
                   {/* Actions */}
                   <div className="flex flex-col gap-3">
                     {/* View Details */}
-                    <Link href={`/plans/${plan.id}`} className="block">
+                    <Link
+                      href={`/plans/${plan.id}`}
+                      className="block"
+                      onClick={() =>
+                        trackEvent(AnalyticsEvent.comparePlansClick, {
+                          ...analyticsBase("plans", state, {
+                            href: `/plans/${plan.id}`,
+                            label: "view_details",
+                            scope: selectedTeam,
+                            plan_id: plan.id,
+                          }),
+                          recommended_plan_id: bestValuePlanId ?? undefined,
+                        })
+                      }
+                    >
                       <Button variant="outline" className="w-full justify-between">
                         <span>View Details</span>
                         <ChevronRight className="size-4" />
@@ -262,9 +305,22 @@ export default function PlansPage() {
 
                     {/* Upgrade Impact - for non-full, non-radio plans */}
                     {plan.tier !== "full" && plan.tier !== "radio" && (
-                      <Link 
+                      <Link
                         href={`/plans/upgrade/${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`}
                         className="flex items-center justify-between rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 transition-colors hover:bg-accent/10"
+                        onClick={() => {
+                          const upgradeId = `${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`
+                          trackEvent(AnalyticsEvent.upgradeClick, {
+                            ...analyticsBase("plans", state, {
+                              href: `/plans/upgrade/${upgradeId}`,
+                              label: "see_upgrade_impact",
+                              scope: selectedTeam,
+                              plan_id: plan.id,
+                            }),
+                            upgrade_id: upgradeId,
+                            recommended_plan_id: bestValuePlanId ?? undefined,
+                          })
+                        }}
                       >
                         <div className="flex items-center gap-2">
                           <Zap className="size-4 text-accent" />

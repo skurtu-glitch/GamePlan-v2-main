@@ -2,14 +2,17 @@
  * Deterministic Assistant layer: structured answers from resolver + optimizer (no LLM).
  */
 
-import { games, userTeams } from "@/lib/data"
+import { getEngineGames, userTeams } from "@/lib/data"
 import type { Game } from "@/lib/types"
 import type { DemoUserState } from "@/lib/demo-user"
 import {
   classifyRecommendedPlans,
   calculateIncrementalPlanValue,
+  calculateNearTermIncrementalValue,
+  DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
   estimateMonthlyCostForConnectedServices,
   getCurrentCoverageBaseline,
+  getUpcomingCoverageWindow,
 } from "@/lib/optimizer-engine"
 import { getOptimizerPlanById, type OptimizerScope } from "@/lib/optimizer-plans"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
@@ -71,7 +74,10 @@ export interface MissingGamesAnswer {
   upgradeHint: {
     planId: string | null
     planName: string | null
+    /** Unlocks on the deterministic sample schedule (same as incremental baseline). */
     newlyWatchableOnSample: number
+    /** Unlocks in the rolling near-term window (same days as the optimizer, default 7) on engine games. */
+    newlyWatchableNearTerm?: number
     incrementalCost: number
   }
   reasons: string[]
@@ -86,7 +92,7 @@ export interface SuggestedPrompt {
 }
 
 function getGameById(gameId: string): Game | undefined {
-  return games.find((g) => g.id === gameId)
+  return getEngineGames().find((g) => g.id === gameId)
 }
 
 function formatMatchup(game: Game): string {
@@ -112,7 +118,7 @@ const SCOPE_HEADLINE: Record<OptimizerScope, string> = {
 }
 
 function gamesMatchingScope(scope: OptimizerScope): Game[] {
-  const userRelevant = games.filter((game) =>
+  const userRelevant = getEngineGames().filter((game) =>
     userTeams.some(
       (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
     )
@@ -280,6 +286,22 @@ export function answerPlanQuestion(
     )
   }
 
+  const nearWindow = getUpcomingCoverageWindow(
+    scope,
+    userState,
+    DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
+    new Date()
+  )
+  if (nearWindow.totalGames > 0) {
+    reasons.push(
+      `Next ${nearWindow.days} days (demo schedule): ${nearWindow.gamesWatchable} of ${nearWindow.totalGames} games watchable (${nearWindow.coveragePercent}%) with your current services.`
+    )
+  } else {
+    reasons.push(
+      `Next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days: no engine games for this scope on the demo calendar—season/sample framing still applies in the optimizer.`
+    )
+  }
+
   return {
     type: "plan-question",
     headline,
@@ -318,17 +340,39 @@ export function answerMissingGamesQuestion(
   const bestId = classified.bestValuePlanId ?? classified.fullCoveragePlanId
   const bestPlan = bestId ? getOptimizerPlanById(bestId) : undefined
 
-  let newlyWatchable = 0
+  let newlyWatchableSample = 0
+  let newlyWatchableNearTerm = 0
   let incrementalCost = 0
   if (bestPlan) {
     const inc = calculateIncrementalPlanValue(bestPlan, scope, userState)
-    newlyWatchable = inc.newlyWatchableGames
+    newlyWatchableSample = inc.newlyWatchableGames
     incrementalCost = inc.incrementalCost
+    const nearInc = calculateNearTermIncrementalValue(
+      bestPlan,
+      scope,
+      userState,
+      DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
+      now
+    )
+    newlyWatchableNearTerm = nearInc.newlyWatchableGames
   }
+
+  const upcoming = getUpcomingCoverageWindow(
+    scope,
+    userState,
+    DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
+    now
+  )
+  const effectiveUnlock = Math.max(newlyWatchableSample, newlyWatchableNearTerm)
 
   const reasons: string[] = [
     `On the demo schedule for ${SCOPE_HEADLINE[scope]}, you can watch ${baseline.gamesWatchable} of ${baseline.totalGames} sample games with your current services (${baseline.coveragePercent}%).`,
   ]
+  if (upcoming.totalGames > 0) {
+    reasons.push(
+      `Next ${upcoming.days} days on the demo schedule: ${upcoming.gamesWatchable} of ${upcoming.totalGames} games watchable (${upcoming.coveragePercent}%) with your current services.`
+    )
+  }
 
   if (missing.length === 0) {
     reasons.push("Every game in the next 7 days for this scope is watchable with your current setup.")
@@ -336,13 +380,16 @@ export function answerMissingGamesQuestion(
     reasons.push(
       `${missing.length} game(s) in the next 7 days are not fully watchable on video — see the list below.`
     )
-    if (bestPlan && newlyWatchable > 0) {
+    if (bestPlan && effectiveUnlock > 0) {
       reasons.push(
-        `The “${bestPlan.name}” bundle unlocks about ${newlyWatchable} more watchable game(s) on the same sample schedule (≈ +$${incrementalCost.toFixed(2)}/mo vs your current priced services).`
+        `The “${bestPlan.name}” bundle unlocks about ${effectiveUnlock} more watchable game(s) where it helps most—up to ${Math.max(
+          newlyWatchableSample,
+          0
+        )} on the full sample and ${Math.max(newlyWatchableNearTerm, 0)} in the next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days (≈ +$${incrementalCost.toFixed(2)}/mo vs your current priced services).`
       )
     } else if (bestPlan) {
       reasons.push(
-        `Consider the “${bestPlan.name}” plan for more coverage; incremental sample unlocks are limited for your current entitlements.`
+        `Consider the “${bestPlan.name}” plan for more coverage; incremental unlocks are limited on both the sample and the next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days for your current entitlements.`
       )
     }
   }
@@ -364,7 +411,10 @@ export function answerMissingGamesQuestion(
     upgradeHint: {
       planId: bestId,
       planName: bestPlan?.name ?? null,
-      newlyWatchableOnSample: newlyWatchable,
+      newlyWatchableOnSample: newlyWatchableSample,
+      ...(newlyWatchableNearTerm > 0
+        ? { newlyWatchableNearTerm: newlyWatchableNearTerm }
+        : {}),
       incrementalCost,
     },
     reasons,
@@ -383,7 +433,7 @@ export function createSuggestedPrompts(userState: DemoUserState): SuggestedPromp
   const prompts: SuggestedPrompt[] = []
 
   const now = new Date()
-  const tonights = games.filter((game) => {
+  const tonights = getEngineGames().filter((game) => {
     if (
       !userTeams.some(
         (t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id

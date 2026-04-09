@@ -5,7 +5,7 @@
 
 import { answerMissingGamesQuestion } from "@/lib/assistant-engine"
 import type { DemoUserState } from "@/lib/demo-user"
-import { games, userTeams } from "@/lib/data"
+import { getEngineGames, userTeams } from "@/lib/data"
 import {
   calculateIncrementalPlanValue,
   classifyRecommendedPlans,
@@ -42,7 +42,7 @@ function formatMatchup(game: Game): string {
 }
 
 function userTeamGames(): Game[] {
-  return games.filter((game) =>
+  return getEngineGames().filter((game) =>
     userTeams.some(
       (t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id
     )

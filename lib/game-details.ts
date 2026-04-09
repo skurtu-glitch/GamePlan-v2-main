@@ -1,10 +1,10 @@
 import type { GameDetail } from "./types"
-import { games } from "./data"
+import { getEngineGames } from "./data"
 import { alignListenFeedsWithGameListen } from "./align-listen-feeds"
 import { LISTEN_FEED } from "./streaming-service-ids"
 
 export const bluesGameDetail: GameDetail = {
-  ...games[0],
+  ...getEngineGames()[0],
   listenFeeds: [
     {
       name: "Blues Radio Network",
@@ -30,7 +30,7 @@ export const bluesGameDetail: GameDetail = {
 }
 
 export const cardinalsGameDetail: GameDetail = {
-  ...games[1],
+  ...getEngineGames()[1],
   listenFeeds: [
     {
       name: "Cardinals Radio Network",

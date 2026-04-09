@@ -1,5 +1,6 @@
-import type { Team, Game, StreamingPlan } from "./types"
-import { LISTEN_FEED, PROVIDER_LABEL, serviceDisplayName } from "./streaming-service-ids"
+import type { Team, StreamingPlan } from "./types"
+import { PROVIDER_LABEL, serviceDisplayName } from "./streaming-service-ids"
+import { bindDemoSchedule, getEngineGames } from "./data-sources/games"
 
 export const teams: Team[] = [
   {
@@ -44,141 +45,28 @@ export const userTeams = teams.filter((t) =>
   ["stl-blues", "stl-cardinals"].includes(t.id)
 )
 
-// Helper to create dates relative to now
-const today = new Date()
-const todayAt = (hour: number, min = 0) => {
-  const d = new Date(today)
-  d.setHours(hour, min, 0, 0)
-  return d.toISOString()
-}
-const tomorrowAt = (hour: number, min = 0) => {
-  const d = new Date(today)
-  d.setDate(d.getDate() + 1)
-  d.setHours(hour, min, 0, 0)
-  return d.toISOString()
-}
-const daysFromNow = (days: number, hour: number, min = 0) => {
-  const d = new Date(today)
-  d.setDate(d.getDate() + days)
-  d.setHours(hour, min, 0, 0)
-  return d.toISOString()
-}
+bindDemoSchedule(teams)
 
-export const games: Game[] = [
-  // Tonight's games
-  {
-    id: "game-1",
-    homeTeam: teams.find((t) => t.id === "stl-blues")!,
-    awayTeam: teams.find((t) => t.id === "col-avalanche")!,
-    dateTime: todayAt(19, 0),
-    watch: {
-      status: "available",
-      provider: PROVIDER_LABEL.ESPN_PLUS,
-      providers: ["espn-plus"],
-    },
-    listen: {
-      status: "available",
-      provider: LISTEN_FEED.BLUES_AM,
-    },
-    recommendation: "Watch",
-    venue: "Enterprise Center",
-    access: {
-      status: "watchable",
-      reason: `Available on ${PROVIDER_LABEL.ESPN_PLUS} with your subscription`,
-      actions: [
-        { label: `Watch on ${PROVIDER_LABEL.ESPN_PLUS}`, type: "open", provider: PROVIDER_LABEL.ESPN_PLUS },
-        { label: `Listen on ${LISTEN_FEED.BLUES_AM}`, type: "open", provider: LISTEN_FEED.BLUES_AM },
-      ],
-      bestOption: {
-        label: `Watch on ${PROVIDER_LABEL.ESPN_PLUS}`,
-        action: { label: `Watch on ${PROVIDER_LABEL.ESPN_PLUS}`, type: "open", provider: PROVIDER_LABEL.ESPN_PLUS },
-      },
-    },
-  },
-  {
-    id: "game-2",
-    homeTeam: teams.find((t) => t.id === "stl-cardinals")!,
-    awayTeam: teams.find((t) => t.id === "chi-cubs")!,
-    dateTime: todayAt(19, 15),
-    watch: {
-      status: "unavailable",
-      provider: PROVIDER_LABEL.FANDUEL_RSN,
-      providers: ["fanduel-sports"],
-      note: "Not available with your current plan",
-    },
-    listen: {
-      status: "available",
-      provider: LISTEN_FEED.CARDINALS_AM,
-    },
-    recommendation: "Just Listen",
-    venue: "Busch Stadium",
-    access: {
-      status: "unavailable",
-      reason: `Your plan doesn't include ${PROVIDER_LABEL.FANDUEL_RSN}`,
-      actions: [
-        { label: `Add ${PROVIDER_LABEL.FANDUEL_RSN}`, type: "add", provider: PROVIDER_LABEL.FANDUEL_RSN, price: "$19.99/mo" },
-        { label: `Listen free on ${LISTEN_FEED.CARDINALS_AM}`, type: "open", provider: LISTEN_FEED.CARDINALS_AM },
-      ],
-      bestOption: {
-        label: "Add RSN to watch",
-        action: { label: `Add ${PROVIDER_LABEL.FANDUEL_RSN}`, type: "add", provider: PROVIDER_LABEL.FANDUEL_RSN, price: "$19.99/mo" },
-      },
-    },
-  },
-  // Upcoming games
-  {
-    id: "game-3",
-    homeTeam: teams.find((t) => t.id === "col-avalanche")!,
-    awayTeam: teams.find((t) => t.id === "stl-blues")!,
-    dateTime: tomorrowAt(20, 0),
-    watch: {
-      status: "available",
-      provider: PROVIDER_LABEL.MAX,
-      providers: ["max"],
-    },
-    listen: {
-      status: "available",
-      provider: LISTEN_FEED.BLUES_AM,
-    },
-    recommendation: "Watch",
-    venue: "Ball Arena",
-  },
-  {
-    id: "game-4",
-    homeTeam: teams.find((t) => t.id === "chi-cubs")!,
-    awayTeam: teams.find((t) => t.id === "stl-cardinals")!,
-    dateTime: daysFromNow(3, 13, 20),
-    watch: {
-      status: "partial",
-      provider: PROVIDER_LABEL.MLB_TV,
-      providers: ["mlb-tv"],
-      note: "Out-of-market only",
-    },
-    listen: {
-      status: "available",
-      provider: LISTEN_FEED.CARDINALS_AM,
-    },
-    recommendation: "Just Listen",
-    venue: "Wrigley Field",
-  },
-  {
-    id: "game-5",
-    homeTeam: teams.find((t) => t.id === "stl-blues")!,
-    awayTeam: teams.find((t) => t.id === "col-avalanche")!,
-    dateTime: daysFromNow(5, 19, 0),
-    watch: {
-      status: "available",
-      provider: PROVIDER_LABEL.FANDUEL_RSN,
-      providers: ["fanduel-sports"],
-    },
-    listen: {
-      status: "available",
-      provider: LISTEN_FEED.BLUES_AM,
-    },
-    recommendation: "Watch",
-    venue: "Enterprise Center",
-  },
-]
+/** @deprecated Prefer `getEngineGames()` from `@/lib/data-sources/games` or `@/lib/data`. */
+export const games = getEngineGames()
+
+export {
+  bindDemoSchedule,
+  getDefaultGamesDataSource,
+  getEngineGames,
+  getGamesForTeams,
+  getGamesInWindow,
+  getNormalizedSchedule,
+  getUpcomingGames,
+  toNormalizedGame,
+} from "./data-sources/games"
+
+export type { GamesDataSource } from "./data-sources/games"
+export type {
+  NormalizedGame,
+  NormalizedLeague,
+  NormalizedTeamSide,
+} from "./data-sources/types"
 
 export const streamingPlans: StreamingPlan[] = [
   {

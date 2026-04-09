@@ -12,6 +12,8 @@ import { promotionRowToPromotion } from "@/lib/promotion-mapper"
 import { getPromotionStatus } from "@/lib/promotions"
 import { ArrowLeft, Loader2, Plus, Tag, Trash2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useDemoUser } from "@/components/providers/demo-user-provider"
+import { trackAffiliateClick } from "@/lib/analytics"
 
 function statusClass(status: ReturnType<typeof getPromotionStatus>) {
   switch (status) {
@@ -42,6 +44,7 @@ const emptyForm: Omit<PromotionRow, "id" | "last_updated"> = {
 }
 
 export default function PromotionsAdminPage() {
+  const { state } = useDemoUser()
   const reloadCatalog = useReloadPromotionsCatalog()
   const [rows, setRows] = useState<PromotionRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -260,7 +263,29 @@ export default function PromotionsAdminPage() {
                           {status}
                         </span>
                       </td>
-                      <td className="px-3 py-2 font-mono text-foreground">{row.service_id}</td>
+                      <td className="px-3 py-2 font-mono text-foreground">
+                        <span className="inline-flex items-center gap-1.5">
+                          {row.service_id}
+                          {row.source_url && /^https?:\/\//i.test(row.source_url) ? (
+                            <a
+                              href={row.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-accent underline-offset-2 hover:underline"
+                              title="Open promotion source URL"
+                              onClick={() =>
+                                trackAffiliateClick(row.source_url!, "promotions", state, {
+                                  promotion_id: row.id,
+                                  service_id: row.service_id,
+                                  label: "promotion_source_url",
+                                })
+                              }
+                            >
+                              ↗
+                            </a>
+                          ) : null}
+                        </span>
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground">{row.type}</td>
                       <td className="px-3 py-2 text-muted-foreground">{row.confidence}</td>
                       <td className="px-3 py-2 text-muted-foreground">

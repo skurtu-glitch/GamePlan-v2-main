@@ -15,7 +15,11 @@
 
 import type { Game, Sport } from "./types"
 import { teams } from "./data"
-import { defaultDemoUserState, type DemoUserState } from "./demo-user"
+import {
+  defaultDemoUserState,
+  demoUserWithConnectedServiceIds,
+  type DemoUserState,
+} from "./demo-user"
 import { getOptimizerPlanById } from "./optimizer-plans"
 import { resolveGameAccess } from "./resolve-game-access"
 import { formatServiceIdList, LISTEN_FEED } from "./streaming-service-ids"
@@ -174,12 +178,8 @@ const COVERAGE_SORT_KEY = new Map<string, number>(
  */
 export function buildSimulatedDemoUserStateForPlan(planId: string): DemoUserState {
   const plan = getOptimizerPlanById(planId)
-  return {
-    ...defaultDemoUserState,
-    connectedServiceIds: plan
-      ? [...plan.servicesIncluded]
-      : [...defaultDemoUserState.connectedServiceIds],
-  }
+  const ids = plan ? [...plan.servicesIncluded] : [...defaultDemoUserState.connectedServiceIds]
+  return demoUserWithConnectedServiceIds(defaultDemoUserState, ids)
 }
 
 /** Same game list Plan Details / upgrade diff use for a scope (deterministic, sorted). */
@@ -255,10 +255,7 @@ export function getSampleTransitionCounts(
   fromState: DemoUserState,
   toServiceIds: string[]
 ): SampleTransitionCounts {
-  const toState: DemoUserState = {
-    ...fromState,
-    connectedServiceIds: [...toServiceIds],
-  }
+  const toState = demoUserWithConnectedServiceIds(fromState, toServiceIds)
   let newlyWatchableGames = 0
   let newlyListenableGames = 0
   let lostWatchableGames = 0

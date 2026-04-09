@@ -5,6 +5,12 @@
 
 import type { DemoUserState } from "@/lib/demo-user"
 import {
+  DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
+  getNearTermTransitionCounts,
+  getUpcomingCoverageWindow,
+  type UpcomingCoverageWindow,
+} from "@/lib/near-term-coverage"
+import {
   getSampleCoverageCounts,
   getSampleTransitionCounts,
 } from "@/lib/plan-coverage"
@@ -66,8 +72,9 @@ function round2(n: number): number {
 }
 
 /**
- * Baseline from `userState` on the deterministic sample for `scope` (`resolveGameAccess` per game).
- * Not to be confused with catalog season totals on `OptimizerPlan`.
+ * Baseline from `userState` on the deterministic **sample** schedule for `scope`
+ * (`resolveGameAccess` per game). For real engine games in a rolling window, use
+ * {@link getUpcomingCoverageWindow}. Not to be confused with catalog season totals on `OptimizerPlan`.
  */
 export function getCurrentCoverageBaseline(
   scope: OptimizerScope,
@@ -124,6 +131,53 @@ export function calculateIncrementalPlanValue(
     costPerNewWatchableGame,
   }
 }
+
+/**
+ * Incremental unlocks on **real** upcoming games in a rolling window (default 7 days), same
+ * delta semantics as {@link calculateIncrementalPlanValue} but uses the engine schedule.
+ */
+export function calculateNearTermIncrementalValue(
+  plan: OptimizerPlan,
+  scope: OptimizerScope,
+  userState: DemoUserState,
+  days: number = DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
+  now: Date = new Date()
+): IncrementalPlanValue {
+  if (plan.scope !== scope) {
+    throw new Error(
+      `calculateNearTermIncrementalValue: scope "${scope}" must match plan.scope "${plan.scope}"`
+    )
+  }
+
+  const connected = new Set(userState.connectedServiceIds)
+  const incrementalServices = plan.servicesIncluded.filter((id) => !connected.has(id))
+
+  const baselineCost = estimateMonthlyCostForConnectedServices(userState)
+  const incrementalCost = round2(plan.monthlyCost - baselineCost)
+
+  const t = getNearTermTransitionCounts(scope, userState, plan.servicesIncluded, days, now)
+
+  const costPerNewWatchableGame = round2(
+    incrementalCost / Math.max(1, t.newlyWatchableGames)
+  )
+
+  return {
+    newlyWatchableGames: t.newlyWatchableGames,
+    newlyListenableGames: t.newlyListenableGames,
+    lostWatchableGames: t.lostWatchableGames,
+    lostListenableGames: t.lostListenableGames,
+    incrementalServices,
+    incrementalCost,
+    costPerNewWatchableGame,
+  }
+}
+
+/**
+ * Re-exported for callers that import optimizer helpers only.
+ * @see {@link getUpcomingCoverageWindow} in `near-term-coverage.ts`
+ */
+export { getUpcomingCoverageWindow, DEFAULT_NEAR_TERM_OPTIMIZER_DAYS }
+export type { UpcomingCoverageWindow }
 
 /**
  * Catalog plans for the scope. `userState` reserved for future filtering (e.g. hide redundant tiers).
@@ -206,6 +260,8 @@ export interface ScoredPlanCandidate {
   planId: string
   summary: PlanCandidateSummary
   incremental: IncrementalPlanValue
+  /** “Next N days” delta on the engine schedule; used to layer immediacy onto Best Value scoring. */
+  nearTermIncremental: IncrementalPlanValue
   score: PlanCandidateScore
 }
 
@@ -232,17 +288,29 @@ function comparePlanId(a: string, b: string): number {
 /**
  * Score a single catalog plan for recommendation buckets.
  * `bestValueScore` (non-radio): newlyWatchableGames*2 + coveragePercent*0.3 - incrementalCost*0.5 - incrementalServices*3.
+ *
+ * When `nearTermIncremental` is provided, the newly-watchable term uses
+ * `max(sample, near-term)` so Best Value can reflect the next week without discarding the sample schedule.
  */
 export function scorePlanCandidate(
   summary: PlanCandidateSummary,
-  incremental: IncrementalPlanValue
+  incremental: IncrementalPlanValue,
+  nearTermIncremental?: IncrementalPlanValue
 ): PlanCandidateScore {
   const isRadio = summary.tier === "radio"
   const cheapestEligible = !isRadio && summary.gamesWatchable > 0
   const fullCoverageEligible = !isRadio
 
+  const newlyWatchableForScore =
+    nearTermIncremental !== undefined
+      ? Math.max(
+          incremental.newlyWatchableGames,
+          nearTermIncremental.newlyWatchableGames
+        )
+      : incremental.newlyWatchableGames
+
   const rawBestValue =
-    incremental.newlyWatchableGames * BV_WEIGHT_NEW_WATCHABLE +
+    newlyWatchableForScore * BV_WEIGHT_NEW_WATCHABLE +
     summary.coveragePercent * BV_WEIGHT_COVERAGE_PERCENT -
     incremental.incrementalCost * BV_PENALTY_INCREMENTAL_COST -
     incremental.incrementalServices.length * BV_PENALTY_INCREMENTAL_SERVICE
@@ -358,12 +426,20 @@ export function classifyRecommendedPlans(
   userState: DemoUserState
 ): ClassifiedRecommendations {
   const plans = generatePlanCandidates(scope, userState)
+  const nearTermNow = new Date()
 
   const scoredCandidates: ScoredPlanCandidate[] = plans.map((plan) => {
     const summary = summarizePlanCandidate(plan, userState)
     const incremental = calculateIncrementalPlanValue(plan, scope, userState)
-    const score = scorePlanCandidate(summary, incremental)
-    return { planId: plan.id, summary, incremental, score }
+    const nearTermIncremental = calculateNearTermIncrementalValue(
+      plan,
+      scope,
+      userState,
+      DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
+      nearTermNow
+    )
+    const score = scorePlanCandidate(summary, incremental, nearTermIncremental)
+    return { planId: plan.id, summary, incremental, nearTermIncremental, score }
   })
 
   scoredCandidates.sort((a, b) => {

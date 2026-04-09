@@ -27,6 +27,12 @@ import {
   type WatchQuestionAnswer,
 } from "@/lib/assistant-engine"
 import type { DemoUserState } from "@/lib/demo-user"
+import {
+  AnalyticsEvent,
+  analyticsBase,
+  trackAssistantNavigationClick,
+  trackEvent,
+} from "@/lib/analytics"
 
 const DEMO_SUGGESTED_PROMPTS = [
   { icon: Tv, text: "Can I watch tonight’s Blues game?" },
@@ -184,14 +190,22 @@ function ResponseReasons({ items }: { items: string[] }) {
 function ActionStack({
   primary,
   secondary,
+  userState,
 }: {
   primary: { label: string; href?: string }
   secondary?: { label: string; href?: string }
+  userState: DemoUserState
 }) {
   return (
     <div className="flex flex-col gap-3 border-t border-border/50 p-5">
       {primary.href ? (
-        <Link href={primary.href} className="block">
+        <Link
+          href={primary.href}
+          className="block"
+          onClick={() =>
+            trackAssistantNavigationClick(userState, primary.href, primary.label)
+          }
+        >
           <Button className="h-11 w-full gap-2 text-base font-semibold shadow-sm">
             {primary.label}
             <ChevronRight className="size-4 opacity-90" />
@@ -205,7 +219,13 @@ function ActionStack({
       )}
       {secondary &&
         (secondary.href ? (
-          <Link href={secondary.href} className="block">
+          <Link
+            href={secondary.href}
+            className="block"
+            onClick={() =>
+              trackAssistantNavigationClick(userState, secondary.href, secondary.label)
+            }
+          >
             <Button variant="outline" className="h-11 w-full gap-2 text-sm font-medium">
               {secondary.label}
               <ChevronRight className="size-4 opacity-70" />
@@ -261,9 +281,25 @@ export default function AssistantPage() {
   const starterPrompts = useMemo(() => mergedStarterPrompts(state), [state])
 
   const handleSend = useCallback(
-    (text?: string) => {
+    (text?: string, source: "input" | "suggested" = "input") => {
       const query = text || input
       if (!query.trim()) return
+
+      if (source === "suggested") {
+        trackEvent(AnalyticsEvent.assistantSuggestedPromptClick, {
+          ...analyticsBase("assistant", state, {
+            prompt_key: normalizePromptKey(query).slice(0, 120),
+          }),
+        })
+      } else {
+        const parsed = parseAssistantQuery(query, state)
+        trackEvent(AnalyticsEvent.assistantPromptSubmit, {
+          ...analyticsBase("assistant", state, {
+            prompt_length: query.length,
+            intent: parsed.intent,
+          }),
+        })
+      }
 
       const userMessage: Message = {
         id: Date.now().toString(),
@@ -313,7 +349,7 @@ export default function AssistantPage() {
                 <button
                   key={`${prompt.text}-${i}`}
                   type="button"
-                  onClick={() => handleSend(prompt.text)}
+                  onClick={() => handleSend(prompt.text, "suggested")}
                   className="flex items-center gap-4 rounded-2xl border border-border/80 bg-card p-4 text-left shadow-sm transition-colors hover:border-accent/25 hover:bg-secondary/40"
                 >
                   <div className="flex size-10 items-center justify-center rounded-xl bg-secondary/90">
@@ -340,14 +376,18 @@ export default function AssistantPage() {
                   </div>
                 ) : message.engine ? (
                   <div className="w-full space-y-4">
-                    <EngineResponseCard body={message.engine} onPickPrompt={handleSend} />
+                    <EngineResponseCard
+                      body={message.engine}
+                      userState={state}
+                      onPickPrompt={(t) => handleSend(t, "suggested")}
+                    />
                     {message.engine.kind !== "fallback" && (
                       <SuggestedNextQuestions
                         prompts={followUpPrompts(
                           state,
                           index > 0 ? messages[index - 1]?.content : undefined
                         )}
-                        onPick={handleSend}
+                        onPick={(t) => handleSend(t, "suggested")}
                       />
                     )}
                   </div>
@@ -391,9 +431,11 @@ export default function AssistantPage() {
 function EngineResponseCard({
   body,
   onPickPrompt,
+  userState,
 }: {
   body: EngineAssistantBody
   onPickPrompt: (text: string) => void
+  userState: DemoUserState
 }) {
   if (body.kind === "fallback") {
     return (
@@ -438,7 +480,11 @@ function EngineResponseCard({
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{p.summary}</p>
         </div>
         <ResponseReasons items={p.reasons} />
-        <ActionStack primary={p.primaryAction} secondary={p.secondaryAction} />
+        <ActionStack
+          primary={p.primaryAction}
+          secondary={p.secondaryAction}
+          userState={userState}
+        />
       </Card>
     )
   }
@@ -454,7 +500,10 @@ function EngineResponseCard({
           <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{p.summary}</p>
         </div>
         <ResponseReasons items={p.reasons} />
-        <ActionStack primary={{ label: "Compare plans", href: "/plans" }} />
+        <ActionStack
+          primary={{ label: "Compare plans", href: "/plans" }}
+          userState={userState}
+        />
       </Card>
     )
   }
@@ -489,7 +538,11 @@ function EngineResponseCard({
         </div>
       )}
       <ResponseReasons items={p.reasons} />
-      <ActionStack primary={p.primaryAction} secondary={p.secondaryAction} />
+      <ActionStack
+        primary={p.primaryAction}
+        secondary={p.secondaryAction}
+        userState={userState}
+      />
     </Card>
   )
 }

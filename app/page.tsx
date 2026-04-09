@@ -4,12 +4,19 @@ import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
-import { games, userTeams } from "@/lib/data"
+import { getEngineGames, userTeams } from "@/lib/data"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import {
   buildHomeSuggestedInsight,
   type HomeInsightCardContent,
 } from "@/lib/format-home-insight"
+import type { DemoUserState } from "@/lib/demo-user"
+import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import {
+  AnalyticsEvent,
+  analyticsBase,
+  trackEvent,
+} from "@/lib/analytics"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,7 +32,7 @@ import {
 } from "lucide-react"
 
 // Filter games for user's teams
-const userGames = games.filter((game) =>
+const userGames = getEngineGames().filter((game) =>
   userTeams.some(
     (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
   )
@@ -68,7 +75,15 @@ function getCoverageState(
   return "mixed"
 }
 
-function SuggestedForYouCard({ content }: { content: HomeInsightCardContent }) {
+function SuggestedForYouCard({
+  content,
+  demoState,
+  recommendedPlanId,
+}: {
+  content: HomeInsightCardContent
+  demoState: DemoUserState
+  recommendedPlanId: string | null
+}) {
   return (
     <Card className="overflow-hidden border-accent/30 bg-gradient-to-r from-accent/10 to-transparent p-0">
       <div className="flex items-start gap-3 border-b border-border/40 p-4">
@@ -94,7 +109,23 @@ function SuggestedForYouCard({ content }: { content: HomeInsightCardContent }) {
         </div>
       </div>
       <div className="p-4">
-        <Link href={content.ctaHref} className="block">
+        <Link
+          href={content.ctaHref}
+          className="block"
+          onClick={() =>
+            trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
+              ...analyticsBase("home", demoState, {
+                href: content.ctaHref,
+                label: content.ctaLabel,
+                scope: "both",
+              }),
+              recommended_plan_id: recommendedPlanId ?? undefined,
+              plan_id: content.ctaHref.startsWith("/plans/")
+                ? content.ctaHref.replace("/plans/", "").split("?")[0]
+                : undefined,
+            })
+          }
+        >
           <Button className="h-10 w-full gap-2 font-semibold">
             {content.ctaLabel}
             <ChevronRight className="size-4" />
@@ -135,6 +166,10 @@ export default function HomePage() {
   )
 
   const suggestedForYou = useMemo(() => buildHomeSuggestedInsight(state, "both"), [state])
+  const homeRecommendations = useMemo(
+    () => classifyRecommendedPlans("both", state),
+    [state]
+  )
 
   useEffect(() => {
     setMounted(true)
@@ -230,7 +265,17 @@ export default function HomePage() {
                 <p className="mb-5 text-sm text-muted-foreground">
                   Add your streaming subscriptions to see what you can watch
                 </p>
-                <Link href="/settings/services">
+                <Link
+                  href="/settings/services"
+                  onClick={() =>
+                    trackEvent(AnalyticsEvent.connectedServicesClick, {
+                      ...analyticsBase("home", state, {
+                        href: "/settings/services",
+                        label: "Add Services",
+                      }),
+                    })
+                  }
+                >
                   <Button className="gap-2">
                     Add Services
                     <ChevronRight className="size-4" />
@@ -368,7 +413,22 @@ export default function HomePage() {
                       : access.fixRecommendation ?? access.reason ?? null
                   
                   return (
-                    <Link key={game.id} href={`/game/${game.id}`} className="block">
+                    <Link
+                      key={game.id}
+                      href={`/game/${game.id}`}
+                      className="block"
+                      onClick={() =>
+                        trackEvent(AnalyticsEvent.watchActionClick, {
+                          ...analyticsBase("home", state, {
+                            game_id: game.id,
+                            href: `/game/${game.id}`,
+                            label: "tonight_game_row",
+                          }),
+                          recommended_plan_id:
+                            homeRecommendations.bestValuePlanId ?? undefined,
+                        })
+                      }
+                    >
                       <div className={`px-4 py-3.5 transition-colors hover:bg-secondary/30 active:bg-secondary/50 ${
                         coverageState === "single_game" ? "py-4" : ""
                       }`}>
@@ -454,7 +514,21 @@ export default function HomePage() {
                       : ("unavailable" as const)
 
                 return (
-                  <Link key={game.id} href={`/game/${game.id}`}>
+                  <Link
+                    key={game.id}
+                    href={`/game/${game.id}`}
+                    onClick={() =>
+                      trackEvent(AnalyticsEvent.watchActionClick, {
+                        ...analyticsBase("home", state, {
+                          game_id: game.id,
+                          href: `/game/${game.id}`,
+                          label: "upcoming_game_card",
+                        }),
+                        recommended_plan_id:
+                          homeRecommendations.bestValuePlanId ?? undefined,
+                      })
+                    }
+                  >
                     <Card className="overflow-hidden border-border bg-card/50 p-0 transition-colors hover:bg-card">
                       <div className="flex flex-col gap-0">
                       <div className="flex items-center gap-3 p-3">
@@ -502,6 +576,15 @@ export default function HomePage() {
                           <Link
                             href="/plans"
                             className="mt-1 inline-flex items-center gap-1 font-medium text-accent"
+                            onClick={() =>
+                              trackEvent(AnalyticsEvent.comparePlansClick, {
+                                ...analyticsBase("home", state, {
+                                  href: "/plans",
+                                  label: "Compare plans",
+                                  game_id: game.id,
+                                }),
+                              })
+                            }
                           >
                             Compare plans
                             <ChevronRight className="size-3.5" />
@@ -526,7 +609,11 @@ export default function HomePage() {
             <p className="mb-3 text-xs tabular-nums leading-relaxed text-muted-foreground">
               {suggestedForYou.wowMetricLine}
             </p>
-            <SuggestedForYouCard content={suggestedForYou} />
+            <SuggestedForYouCard
+              content={suggestedForYou}
+              demoState={state}
+              recommendedPlanId={homeRecommendations.bestValuePlanId}
+            />
           </section>
         )}
 

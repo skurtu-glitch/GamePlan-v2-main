@@ -27,6 +27,13 @@ import { getOptimizerPlanById } from "@/lib/optimizer-plans"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
+import { useDemoUser } from "@/components/providers/demo-user-provider"
+import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import {
+  AnalyticsEvent,
+  analyticsBase,
+  trackEvent,
+} from "@/lib/analytics"
 
 type FilterType = "all" | "watchable" | "listen-only" | "unavailable"
 
@@ -63,6 +70,7 @@ function getStatusLabel(status: GameCoverage["status"]) {
 export default function PlanDetailPage({ params }: { params: Promise<{ planId: string }> }) {
   const { planId } = use(params)
   const router = useRouter()
+  const { state } = useDemoUser()
   const [filter, setFilter] = useState<FilterType>("all")
   
   const plan = getOptimizerPlanById(planId)
@@ -71,6 +79,10 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
   const coverage = getPlanCoverage(planId, team)
   const sampleStats = getCoverageStats(coverage)
   const availableUpgrades = getUpgradesFromPlan(planId)
+  const planRecs = useMemo(
+    () => classifyRecommendedPlans(team, state),
+    [team, state]
+  )
   
   if (!plan) {
     return (
@@ -319,7 +331,22 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
             {availableUpgrades.map((upgrade) => {
               const upgradeStats = getUpgradeImpactStats(upgrade)
               return (
-                <Link key={upgrade.id} href={`/plans/upgrade/${upgrade.id}`}>
+                <Link
+                  key={upgrade.id}
+                  href={`/plans/upgrade/${upgrade.id}`}
+                  onClick={() =>
+                    trackEvent(AnalyticsEvent.upgradeClick, {
+                      ...analyticsBase("plan_detail", state, {
+                        href: `/plans/upgrade/${upgrade.id}`,
+                        label: "upgrade_card",
+                        scope: team,
+                        plan_id: planId,
+                      }),
+                      upgrade_id: upgrade.id,
+                      recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+                    })
+                  }
+                >
                   <Card className="overflow-hidden border-accent/30 bg-gradient-to-r from-accent/5 to-transparent p-0 transition-all hover:border-accent/50">
                     <div className="flex items-center gap-4 p-4">
                       <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-500/15">
@@ -430,11 +457,40 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
       {!isRadioOnly && availableUpgrades.length > 0 && (
         <div className="fixed bottom-20 left-0 right-0 z-10 border-t border-border bg-background/95 px-5 py-4 backdrop-blur-sm">
           <div className="mx-auto flex max-w-lg gap-3">
-            <Button className="flex-1 gap-2" size="lg">
+            <Button
+              className="flex-1 gap-2"
+              size="lg"
+              type="button"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
+                  ...analyticsBase("plan_detail", state, {
+                    label: "get_this_plan_sticky",
+                    scope: team,
+                    plan_id: planId,
+                  }),
+                  recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+                })
+              }
+            >
               Get This Plan
               <ChevronRight className="size-4" />
             </Button>
-            <Link href={`/plans/upgrade/${availableUpgrades[0].id}`} className="shrink-0">
+            <Link
+              href={`/plans/upgrade/${availableUpgrades[0].id}`}
+              className="shrink-0"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.upgradeClick, {
+                  ...analyticsBase("plan_detail", state, {
+                    href: `/plans/upgrade/${availableUpgrades[0].id}`,
+                    label: "see_upgrade_sticky",
+                    scope: team,
+                    plan_id: planId,
+                  }),
+                  upgrade_id: availableUpgrades[0].id,
+                  recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+                })
+              }
+            >
               <Button variant="outline" size="lg" className="gap-2">
                 <Zap className="size-4" />
                 See Upgrade
@@ -448,7 +504,21 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
       {(isRadioOnly || availableUpgrades.length === 0) && (
         <div className="fixed bottom-20 left-0 right-0 z-10 border-t border-border bg-background/95 px-5 py-4 backdrop-blur-sm">
           <div className="mx-auto max-w-lg">
-            <Button className="w-full gap-2" size="lg">
+            <Button
+              className="w-full gap-2"
+              size="lg"
+              type="button"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
+                  ...analyticsBase("plan_detail", state, {
+                    label: isRadioOnly ? "use_free_radio_sticky" : "get_this_plan_full_radio_sticky",
+                    scope: team,
+                    plan_id: planId,
+                  }),
+                  recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+                })
+              }
+            >
               {isRadioOnly ? "Use Free Radio" : "Get This Plan"}
               <ChevronRight className="size-4" />
             </Button>

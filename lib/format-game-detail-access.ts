@@ -1,3 +1,4 @@
+import { missingVideoProviders, userEntitledToService } from "@/lib/access-rules"
 import type { DemoUserState } from "@/lib/demo-user"
 import type { Game, WatchOption } from "@/lib/types"
 import { demoMonthlyPriceUsd, serviceDisplayName } from "@/lib/streaming-service-ids"
@@ -68,7 +69,7 @@ function buildWatchOptions(
   }
 
   return ids.map((id) => {
-    const connected = userState.connectedServiceIds.includes(id)
+    const connected = userEntitledToService(userState, id)
     const priceUsd = demoMonthlyPriceUsd(id)
     return {
       provider: serviceDisplayName(id),
@@ -115,7 +116,7 @@ function buildWatchVerdict(
       carrierLine,
       `You can follow live audio on ${listenProvider(game)}.`,
     ]
-    const missing = ids.filter((id) => !userState.connectedServiceIds.includes(id))
+    const missing = missingVideoProviders(userState, ids)
     if (missing.length > 0) {
       reasons.push(
         `To watch, add one of: ${joinLabels(missing)} (see Connected Services or Plans).`
@@ -178,7 +179,7 @@ function buildWhyThisAnswer(
   ]
 
   if (resolved.status === "watchable") {
-    const met = ids.filter((id) => userState.connectedServiceIds.includes(id))
+    const met = ids.filter((id) => userEntitledToService(userState, id))
     if (met.length > 0) {
       bullets.push(
         `Watch works because you have ${joinLabels(met)} connected for video.`
@@ -188,7 +189,7 @@ function buildWhyThisAnswer(
   } else {
     bullets.push(resolved.reason ?? "Video is not available with your current plan.")
     if (ids.length > 0) {
-      const missing = ids.filter((id) => !userState.connectedServiceIds.includes(id))
+      const missing = missingVideoProviders(userState, ids)
       if (missing.length > 0) {
         bullets.push(
           `You're missing video entitlement for: ${joinLabels(missing)}.`

@@ -5,7 +5,7 @@ import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { userTeams, games } from "@/lib/data"
+import { userTeams, getEngineGames } from "@/lib/data"
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -33,7 +33,7 @@ export default function TeamsPage() {
   }, [])
 
   const getNextGame = (teamId: string) => {
-    return games.find(
+    return getEngineGames().find(
       (game) => game.homeTeam.id === teamId || game.awayTeam.id === teamId
     )
   }
@@ -94,7 +94,7 @@ export default function TeamsPage() {
                       </div>
                       <div className="flex-1">
                         <h3 className="text-lg font-semibold text-foreground">{team.name}</h3>
-                        <p className="text-sm text-muted-foreground">{team.sport === "hockey" ? "NHL" : "MLB"}</p>
+                        <p className="text-sm text-muted-foreground">{team.sport === "NHL" ? "NHL" : team.sport}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-2xl font-bold text-emerald-400">{percentage}%</p>

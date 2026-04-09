@@ -27,7 +27,14 @@ import type { WatchOption, ListenFeed } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import type { DemoUserState } from "@/lib/demo-user"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
+import {
+  AnalyticsEvent,
+  analyticsBase,
+  trackEvent,
+  trackListenOutbound,
+} from "@/lib/analytics"
 
 function formatGameTime(dateTime: string) {
   const d = new Date(dateTime)
@@ -98,7 +105,15 @@ function StatusIcon({ available }: { available: boolean }) {
   )
 }
 
-function WatchOptionRow({ option }: { option: WatchOption }) {
+function WatchOptionRow({
+  option,
+  gameId,
+  userState,
+}: {
+  option: WatchOption
+  gameId: string
+  userState: DemoUserState
+}) {
   return (
     <div className="flex items-start gap-3 py-3">
       <StatusIcon available={option.available} />
@@ -118,7 +133,18 @@ function WatchOptionRow({ option }: { option: WatchOption }) {
       </div>
       {!option.available && !option.hasSubscription && option.price && (
         <Button variant="outline" size="sm" className="shrink-0" asChild>
-          <Link href="/settings/services">
+          <Link
+            href="/settings/services"
+            onClick={() =>
+              trackEvent(AnalyticsEvent.connectedServicesClick, {
+                ...analyticsBase("game_detail", userState, {
+                  href: "/settings/services",
+                  label: "watch_option_add",
+                  game_id: gameId,
+                }),
+              })
+            }
+          >
             <Plus className="mr-1 size-3" />
             Add
           </Link>
@@ -128,7 +154,15 @@ function WatchOptionRow({ option }: { option: WatchOption }) {
   )
 }
 
-function ListenFeedRow({ feed }: { feed: ListenFeed }) {
+function ListenFeedRow({
+  feed,
+  gameId,
+  userState,
+}: {
+  feed: ListenFeed
+  gameId: string
+  userState: DemoUserState
+}) {
   const typeLabels: Record<string, string> = {
     home: "Home",
     away: "Away",
@@ -160,7 +194,18 @@ function ListenFeedRow({ feed }: { feed: ListenFeed }) {
         )}
         {feed.url && (
           <Button variant="outline" size="sm" asChild>
-            <a href={feed.url} target="_blank" rel="noopener noreferrer">
+            <a
+              href={feed.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() =>
+                trackListenOutbound(feed.url!, "game_detail", userState, {
+                  game_id: gameId,
+                  label: "listen_feed_row",
+                  feed_type: feed.type,
+                })
+              }
+            >
               <Play className="mr-1 size-3" />
               Listen
             </a>
@@ -313,7 +358,17 @@ export default function GameDetailPage({
                 {accessUi.bestOption.type === "listen" &&
                   (listenAudioUrl ? (
                     <Button className="bg-accent text-accent-foreground hover:bg-accent/90" asChild>
-                      <a href={listenAudioUrl} target="_blank" rel="noopener noreferrer">
+                      <a
+                        href={listenAudioUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() =>
+                          trackListenOutbound(listenAudioUrl, "game_detail", state, {
+                            game_id: id,
+                            label: "open_audio_best_option",
+                          })
+                        }
+                      >
                         <Play className="mr-2 size-4" />
                         Open Audio
                       </a>
@@ -325,12 +380,35 @@ export default function GameDetailPage({
                     </Button>
                   ))}
                 {accessUi.bestOption.type === "watch" && (
-                  <Button className="bg-status-available text-white hover:bg-status-available/90">
+                  <Button
+                    className="bg-status-available text-white hover:bg-status-available/90"
+                    type="button"
+                    onClick={() =>
+                      trackEvent(AnalyticsEvent.watchActionClick, {
+                        ...analyticsBase("game_detail", state, {
+                          game_id: id,
+                          label: "open_watch_best_option",
+                          provider_hint: accessUi.bestOption.provider.split(" ")[0],
+                        }),
+                      })
+                    }
+                  >
                     <ExternalLink className="mr-2 size-4" />
                     Open {accessUi.bestOption.provider.split(" ")[0]}
                   </Button>
                 )}
-                <Link href="/plans">
+                <Link
+                  href="/plans"
+                  onClick={() =>
+                    trackEvent(AnalyticsEvent.comparePlansClick, {
+                      ...analyticsBase("game_detail", state, {
+                        href: "/plans",
+                        label: "view_plans_best_option",
+                        game_id: id,
+                      }),
+                    })
+                  }
+                >
                   <Button variant="outline">
                     <Tv className="mr-2 size-4" />
                     View Plans
@@ -341,7 +419,20 @@ export default function GameDetailPage({
                     <span className="font-medium text-foreground">Also try: </span>
                     {access.fixRecommendation}
                     {" · "}
-                    <Link href="/plans/upgrade/both-cheap-to-value" className="font-medium text-accent underline-offset-2 hover:underline">
+                    <Link
+                      href="/plans/upgrade/both-cheap-to-value"
+                      className="font-medium text-accent underline-offset-2 hover:underline"
+                      onClick={() =>
+                        trackEvent(AnalyticsEvent.upgradeClick, {
+                          ...analyticsBase("game_detail", state, {
+                            href: "/plans/upgrade/both-cheap-to-value",
+                            label: "upgrade_best_value_inline",
+                            game_id: id,
+                          }),
+                          upgrade_id: "both-cheap-to-value",
+                        })
+                      }
+                    >
                       Upgrade to Best Value
                     </Link>
                   </p>
@@ -397,7 +488,7 @@ export default function GameDetailPage({
               </ul>
               <div className="divide-y divide-border/50">
                 {accessUi.watchOptions.map((option, i) => (
-                  <WatchOptionRow key={i} option={option} />
+                  <WatchOptionRow key={i} option={option} gameId={id} userState={state} />
                 ))}
               </div>
               {!accessUi.watchVerdict.canWatch && access && (
@@ -413,13 +504,51 @@ export default function GameDetailPage({
                   </p>
                   <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" size="sm" asChild>
-                      <Link href="/settings/services">Connected Services</Link>
+                      <Link
+                        href="/settings/services"
+                        onClick={() =>
+                          trackEvent(AnalyticsEvent.connectedServicesClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: "/settings/services",
+                              label: "watch_section_connected",
+                              game_id: id,
+                            }),
+                          })
+                        }
+                      >
+                        Connected Services
+                      </Link>
                     </Button>
                     <Button variant="outline" size="sm" asChild>
-                      <Link href="/plans">Compare plans</Link>
+                      <Link
+                        href="/plans"
+                        onClick={() =>
+                          trackEvent(AnalyticsEvent.comparePlansClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: "/plans",
+                              label: "watch_section_compare",
+                              game_id: id,
+                            }),
+                          })
+                        }
+                      >
+                        Compare plans
+                      </Link>
                     </Button>
                     <Button size="sm" className="gap-1" asChild>
-                      <Link href="/plans/upgrade/both-cheap-to-value">
+                      <Link
+                        href="/plans/upgrade/both-cheap-to-value"
+                        onClick={() =>
+                          trackEvent(AnalyticsEvent.upgradeClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: "/plans/upgrade/both-cheap-to-value",
+                              label: "watch_section_upgrade",
+                              game_id: id,
+                            }),
+                            upgrade_id: "both-cheap-to-value",
+                          })
+                        }
+                      >
                         <Zap className="size-3.5" />
                         Upgrade to Best Value
                       </Link>
@@ -447,7 +576,7 @@ export default function GameDetailPage({
             </div>
             <div className="divide-y divide-border/50 px-4">
               {game.listenFeeds.map((feed, i) => (
-                <ListenFeedRow key={i} feed={feed} />
+                <ListenFeedRow key={i} feed={feed} gameId={id} userState={state} />
               ))}
             </div>
           </Card>

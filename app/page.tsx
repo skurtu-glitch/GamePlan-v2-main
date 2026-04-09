@@ -6,19 +6,22 @@ import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
 import { games, userTeams } from "@/lib/data"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
-import { getUserInsights, type InsightType, type UserInsight } from "@/lib/insights-engine"
+import {
+  buildHomeSuggestedInsight,
+  type HomeInsightCardContent,
+} from "@/lib/format-home-insight"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { 
-  Tv, 
-  Radio, 
+import {
+  Tv,
+  Radio,
   ChevronRight,
   Zap,
   Headphones,
   Calendar,
   Plus,
   Sparkles,
-  Check
+  Check,
 } from "lucide-react"
 
 // Filter games for user's teams
@@ -65,56 +68,31 @@ function getCoverageState(
   return "mixed"
 }
 
-function insightVisual(type: InsightType) {
-  switch (type) {
-    case "watch-upgrade":
-      return Zap
-    case "missing-games":
-      return Calendar
-    case "plan-recommendation":
-      return Sparkles
-    case "coverage-summary":
-      return Tv
-    default:
-      return Sparkles
-  }
-}
-
-function ProactiveInsightCard({ insight }: { insight: UserInsight }) {
-  const Icon = insightVisual(insight.type)
-  const primary = insight.primaryAction
-
+function SuggestedForYouCard({ content }: { content: HomeInsightCardContent }) {
   return (
     <Card className="overflow-hidden border-accent/30 bg-gradient-to-r from-accent/10 to-transparent p-0">
       <div className="flex items-start gap-3 border-b border-border/40 p-4">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent/20">
-          <Icon className="size-4 text-accent" />
+          <Sparkles className="size-4 text-accent" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-snug text-foreground">{insight.headline}</p>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{insight.summary}</p>
+          <p className="text-sm font-semibold leading-snug text-foreground">{content.headline}</p>
+          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{content.summary}</p>
+          {content.supportingLine && (
+            <p className="mt-2 text-xs font-medium leading-relaxed text-foreground/80">
+              {content.supportingLine}
+            </p>
+          )}
         </div>
       </div>
-      {(primary || insight.secondaryAction) && (
-        <div className="flex flex-col gap-2 p-4">
-          {primary && (
-            <Link href={primary.href} className="block">
-              <Button className="h-10 w-full gap-2 font-semibold">
-                {primary.label}
-                <ChevronRight className="size-4" />
-              </Button>
-            </Link>
-          )}
-          {insight.secondaryAction && (
-            <Link href={insight.secondaryAction.href} className="block">
-              <Button variant="outline" className="h-10 w-full gap-2 text-sm font-medium">
-                {insight.secondaryAction.label}
-                <ChevronRight className="size-4 opacity-80" />
-              </Button>
-            </Link>
-          )}
-        </div>
-      )}
+      <div className="p-4">
+        <Link href={content.ctaHref} className="block">
+          <Button className="h-10 w-full gap-2 font-semibold">
+            {content.ctaLabel}
+            <ChevronRight className="size-4" />
+          </Button>
+        </Link>
+      </div>
     </Card>
   )
 }
@@ -148,11 +126,8 @@ export default function HomePage() {
     listenOnlyTonight,
   )
 
-  const topInsight = useMemo((): UserInsight | null => {
-    const list = getUserInsights(state)
-    return list[0] ?? null
-  }, [state])
-  
+  const suggestedForYou = useMemo(() => buildHomeSuggestedInsight(state, "both"), [state])
+
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -286,7 +261,7 @@ export default function HomePage() {
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="border-b border-border/50 bg-secondary/30 px-4 py-3">
                 <h2 className="text-sm font-semibold text-foreground">
-                  {coverageState === "single_game" ? "Tonight's Game" : "Your Coverage Tonight"}
+                  Your Coverage Tonight
                 </h2>
               </div>
               <div className="p-5">
@@ -364,22 +339,9 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* Top proactive insight — same priority order as getUserInsights (watch-upgrade → missing-games → plan → coverage) */}
-        {mounted && hasConnectedServices && topInsight && coverageState !== "no_services" && (
-          <section className="mb-6">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Suggested for you
-            </p>
-            <ProactiveInsightCard insight={topInsight} />
-          </section>
-        )}
-
-        {/* ALL GAMES TONIGHT - Tight Action-First Rows */}
+        {/* Tonight’s games — directly under coverage; no separate section title */}
         {tonightsGames.length > 0 && coverageState !== "no_services" && (
           <section className="mb-8">
-            <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              {coverageState === "single_game" ? "Game Details" : "All Games Tonight"}
-            </h2>
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="divide-y divide-border/50">
                 {tonightsGames.map((game) => {
@@ -467,7 +429,7 @@ export default function HomePage() {
 
         {/* UPCOMING GAMES */}
         {upcomingGames.length > 0 && (
-          <section>
+          <section className="mb-8">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 {coverageState === "no_games" ? "Coming Up" : "Upcoming Games"}
@@ -544,6 +506,19 @@ export default function HomePage() {
                 )
               })}
             </div>
+          </section>
+        )}
+
+        {/* Suggested for You — optimizer-led, at end of Home flow */}
+        {mounted && hasConnectedServices && suggestedForYou && coverageState !== "no_services" && (
+          <section className="mb-2">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Suggested for You
+            </p>
+            <p className="mb-3 text-xs tabular-nums leading-relaxed text-muted-foreground">
+              {suggestedForYou.wowMetricLine}
+            </p>
+            <SuggestedForYouCard content={suggestedForYou} />
           </section>
         )}
 

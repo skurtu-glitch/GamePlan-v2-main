@@ -83,6 +83,14 @@ function SuggestedForYouCard({ content }: { content: HomeInsightCardContent }) {
               {content.supportingLine}
             </p>
           )}
+          {content.promoSupportingLine && (
+            <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
+              {content.promoSupportingLine}
+            </p>
+          )}
+          {content.promoFreshnessLine && (
+            <p className="mt-1 text-[10px] text-muted-foreground/75">{content.promoFreshnessLine}</p>
+          )}
         </div>
       </div>
       <div className="p-4">

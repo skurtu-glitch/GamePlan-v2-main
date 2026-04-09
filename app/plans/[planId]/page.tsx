@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, use } from "react"
+import { useState, use, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
@@ -25,6 +25,8 @@ import { getPlanCoverage, getCoverageStats, type GameCoverage } from "@/lib/plan
 import { getUpgradesFromPlan, getUpgradeImpactStats } from "@/lib/upgrade-impact"
 import { getOptimizerPlanById } from "@/lib/optimizer-plans"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
+import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
+import { PlanPromoCallout } from "@/components/plan-promo-callout"
 
 type FilterType = "all" | "watchable" | "listen-only" | "unavailable"
 
@@ -64,6 +66,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
   const [filter, setFilter] = useState<FilterType>("all")
   
   const plan = getOptimizerPlanById(planId)
+  const bundlePromo = useMemo(() => (plan ? getPlanBundlePromoSummary(plan) : null), [plan])
   const team = getTeamFromPlanId(planId)
   const coverage = getPlanCoverage(planId, team)
   const sampleStats = getCoverageStats(coverage)
@@ -268,6 +271,9 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                   )}>
                     {plan.monthlyCost === 0 ? "Free" : `$${plan.monthlyCost.toFixed(2)}`}
                   </p>
+                  {bundlePromo && (
+                    <PlanPromoCallout summary={bundlePromo} className="mt-3 border-t border-border/40 pt-3" />
+                  )}
                 </div>
               </div>
               {plan.monthlyCost > 0 && (

@@ -22,6 +22,8 @@ import {
   type OptimizerScope,
 } from "@/lib/optimizer-plans"
 import { formatServiceIdList } from "@/lib/streaming-service-ids"
+import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
+import { PlanPromoCallout } from "@/components/plan-promo-callout"
 
 function optimizerRoleExplanation(
   planId: string,
@@ -112,6 +114,7 @@ export default function PlansPage() {
             const watchPercent = plan.totalGames > 0 ? (plan.gamesWatchable / plan.totalGames) * 100 : 0
             const listenPercent = plan.totalGames > 0 ? (listenOnlyGames / plan.totalGames) * 100 : 0
             const roleExplanation = optimizerRoleExplanation(plan.id, recommendations)
+            const bundlePromo = getPlanBundlePromoSummary(plan)
 
             return (
               <Card 
@@ -201,6 +204,7 @@ export default function PlansPage() {
                         {plan.monthlyCost === 0 ? "Free" : `$${plan.monthlyCost.toFixed(0)}`}
                       </p>
                       <p className="text-[10px] text-muted-foreground">/month</p>
+                      <PlanPromoCallout summary={bundlePromo} className="mt-2 border-t border-border/30 pt-2 text-left" />
                     </div>
                     
                     {/* Watchable Games - Clickable */}

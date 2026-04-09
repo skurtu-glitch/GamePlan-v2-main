@@ -15,6 +15,7 @@ import {
   type OptimizerScope,
 } from "@/lib/optimizer-plans"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
+import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 
 export const HOME_SUGGESTED_CTA_LABEL = "Review Details in Plan Optimizer" as const
 
@@ -24,6 +25,9 @@ export interface HomeInsightCardContent {
   headline: string
   summary: string
   supportingLine?: string
+  /** From {@link getPlanBundlePromoSummary}; only when promos are fresh + medium/high confidence. */
+  promoSupportingLine?: string
+  promoFreshnessLine?: string
   ctaLabel: typeof HOME_SUGGESTED_CTA_LABEL
   ctaHref: string
 }
@@ -72,6 +76,40 @@ function hasAllPlanServices(plan: OptimizerPlan, state: DemoUserState): boolean 
 }
 
 /**
+ * Promo-aware supporting copy for the recommended catalog plan. Uses bundle pricing only when
+ * {@link getPlanBundlePromoSummary} reports `showPromoLine` (fresh + medium/high confidence).
+ */
+function withRecommendedPlanPromo(
+  plan: OptimizerPlan | undefined,
+  insight: HomeInsightCardContent,
+  now: Date = new Date()
+): HomeInsightCardContent {
+  if (!plan) return insight
+  const bundle = getPlanBundlePromoSummary(plan, now)
+  if (
+    !bundle.showPromoLine ||
+    bundle.introEffectiveMonthlyUsd === undefined ||
+    bundle.introPeriodMonths === undefined
+  ) {
+    return insight
+  }
+
+  const savings = bundle.savingsVsBaseMonthlyUsd ?? 0
+  const softer =
+    savings >= 0.01 ? "With current offers, your intro cost is lower. " : ""
+  const numeric = `~$${bundle.introEffectiveMonthlyUsd.toFixed(
+    2
+  )}/mo avg. for the first ${bundle.introPeriodMonths} months with current offers.`
+  const listRef = ` Bundle list price is $${bundle.baseMonthlyUsd.toFixed(0)}/mo.`
+
+  return {
+    ...insight,
+    promoSupportingLine: `${softer}${numeric}${listRef}`.trim(),
+    promoFreshnessLine: bundle.freshnessLine,
+  }
+}
+
+/**
  * Structured Home insight; `null` when the user has no connected services (Home handles connect CTA elsewhere).
  */
 export function buildHomeSuggestedInsight(
@@ -95,7 +133,7 @@ export function buildHomeSuggestedInsight(
   const wowMetricLine = formatHomeWowMetric(baseline)
 
   if (fullPlan && hasAllPlanServices(fullPlan, userState)) {
-    return {
+    return withRecommendedPlanPromo(fullPlan, {
       wowMetricLine,
       headline: "You're at full coverage for both teams",
       summary:
@@ -106,12 +144,12 @@ export function buildHomeSuggestedInsight(
           : undefined,
       ctaLabel,
       ctaHref: `/plans/${fullPlan.id}`,
-    }
+    })
   }
 
   if (!userHasVideo(userState)) {
     const ctaHref = bestPlan && classified.bestValuePlanId ? `/plans/${classified.bestValuePlanId}` : "/plans"
-    return {
+    return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: "Add a video service to unlock watchable games",
       summary:
@@ -121,7 +159,7 @@ export function buildHomeSuggestedInsight(
         : undefined,
       ctaLabel,
       ctaHref,
-    }
+    })
   }
 
   if (bestPlan && hasAllPlanServices(bestPlan, userState)) {
@@ -131,7 +169,7 @@ export function buildHomeSuggestedInsight(
             .filter((id) => !userState.connectedServiceIds.includes(id))
             .map(serviceDisplayName)
         : []
-    return {
+    return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: "You're already aligned with Best Value",
       summary:
@@ -142,7 +180,7 @@ export function buildHomeSuggestedInsight(
           : undefined,
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
-    }
+    })
   }
 
   if (!bestPlan || !classified.bestValuePlanId) {
@@ -168,19 +206,19 @@ export function buildHomeSuggestedInsight(
     (missingWatchable > 0 && inc.newlyWatchableGames / missingWatchable >= 0.55)
 
   if (inc.newlyWatchableGames <= 0 && inc.incrementalCost <= 0) {
-    return {
+    return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: "Fine-tune your stack in the Plan Optimizer",
       summary: `You're at ${baseline.coveragePercent}% watchable on the demo sample (${baseline.gamesWatchable} of ${baseline.totalGames} games). Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up.`,
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
-    }
+    })
   }
 
   if (strongUnlock && keyAddNames.length >= 2) {
     const havePart =
       haveNames.length > 0 ? `You already have ${formatConjoinedList(haveNames)}. ` : ""
-    return {
+    return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
       summary: `${havePart}Adding ${formatConjoinedList(
@@ -189,20 +227,20 @@ export function buildHomeSuggestedInsight(
       supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, inc.newlyWatchableGames),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
-    }
+    })
   }
 
   if (strongUnlock && keyAddNames.length === 1) {
     const havePart =
       haveNames.length > 0 ? `You already have ${formatConjoinedList(haveNames)}. ` : ""
-    return {
+    return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
       summary: `${havePart}Adding ${keyAddNames[0]} fills a major gap—unlocking most of the games you're currently missing without paying for full coverage.`,
       supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, inc.newlyWatchableGames),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
-    }
+    })
   }
 
   if (inc.newlyWatchableGames > 0) {
@@ -220,17 +258,17 @@ export function buildHomeSuggestedInsight(
           }” picks up about ${inc.newlyWatchableGames} more watchable game(s) on the sample for roughly +$${inc.incrementalCost.toFixed(
             2
           )}/mo.`
-    return {
+    return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
       summary: `${havePart}${addPart}`,
       supportingLine: `Best Value pick: ${bestPlan.name}.`,
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
-    }
+    })
   }
 
-  return {
+  return withRecommendedPlanPromo(bestPlan, {
     wowMetricLine,
     headline: "Optimize cost vs. coverage with Best Value",
     summary: `“${
@@ -238,5 +276,5 @@ export function buildHomeSuggestedInsight(
     }” is still the catalog’s Best Value anchor for both teams—worth a pass in the optimizer even when sample unlocks are flat, especially if you’re weighing swaps across services.`,
     ctaLabel,
     ctaHref: `/plans/${bestPlan.id}`,
-  }
+  })
 }

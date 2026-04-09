@@ -16,6 +16,7 @@ import {
   LogOut,
   Info,
   Users,
+  Tag,
 } from "lucide-react"
 
 interface SettingItemProps {
@@ -127,6 +128,21 @@ export default function SettingsPage() {
                 </div>
               </div>
             </Link>
+          </Card>
+        </section>
+
+        {/* Promotions admin (demo) */}
+        <section className="mb-6">
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+            Catalog
+          </h2>
+          <Card className="overflow-hidden border-border p-0">
+            <SettingItem
+              icon={Tag}
+              label="Promotions"
+              description="Edit streaming offers used in pricing"
+              href="/settings/promotions"
+            />
           </Card>
         </section>
 

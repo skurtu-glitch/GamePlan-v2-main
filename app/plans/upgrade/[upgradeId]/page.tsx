@@ -19,6 +19,9 @@ import {
   TrendingUp,
 } from "lucide-react"
 import { getUpgradeImpact, getUpgradeImpactStats } from "@/lib/upgrade-impact"
+import { getOptimizerPlanById } from "@/lib/optimizer-plans"
+import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
+import { PlanPromoCallout } from "@/components/plan-promo-callout"
 import { cn } from "@/lib/utils"
 
 export default function UpgradeImpactPage({ params }: { params: Promise<{ upgradeId: string }> }) {
@@ -43,6 +46,16 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
   const stats = getUpgradeImpactStats(upgrade)
   const currentPercentage = Math.round((stats.currentWatchable / stats.totalGames) * 100)
   const upgradedPercentage = Math.round((stats.upgradedWatchable / stats.totalGames) * 100)
+
+  const fromPlan = getOptimizerPlanById(upgrade.fromPlanId)
+  const toPlan = getOptimizerPlanById(upgrade.toPlanId)
+  const upgradedBundlePromo = toPlan ? getPlanBundlePromoSummary(toPlan) : null
+  const introUpgradeStepMo =
+    upgradedBundlePromo?.showPromoLine &&
+    upgradedBundlePromo.introEffectiveMonthlyUsd !== undefined &&
+    fromPlan
+      ? Math.round((upgradedBundlePromo.introEffectiveMonthlyUsd - fromPlan.monthlyCost) * 100) / 100
+      : null
 
   return (
     <div className="flex min-h-screen flex-col bg-background pb-40">
@@ -149,6 +162,22 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
             </div>
           </div>
         </Card>
+
+        {upgradedBundlePromo?.showPromoLine && (
+          <Card className="mb-6 overflow-hidden border-border/60 bg-card/40 p-0">
+            <div className="px-4 py-3">
+              <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                Upgraded plan — intro offers
+              </p>
+              <PlanPromoCallout summary={upgradedBundlePromo} />
+              {introUpgradeStepMo !== null && (
+                <p className="mt-2 text-[10px] leading-relaxed text-muted-foreground">
+                  {`With offers, estimated upgrade step: ~+$${introUpgradeStepMo.toFixed(2)}/mo avg. (list price step +$${stats.costDelta.toFixed(2)}/mo)`}
+                </p>
+              )}
+            </div>
+          </Card>
+        )}
 
         {/* Value Framing */}
         <Card className="mb-6 overflow-hidden border-border p-0">

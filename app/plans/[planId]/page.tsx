@@ -277,16 +277,23 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                   )}
                 </div>
                 <div>
-                  <p className="text-xs text-muted-foreground">Monthly Cost</p>
+                  <p className="text-xs text-muted-foreground">List price</p>
                   <p className={cn(
                     "text-xl font-bold",
                     plan.monthlyCost === 0 ? "text-emerald-400" : isLogicBestValue ? "text-accent" : "text-foreground"
                   )}>
                     {plan.monthlyCost === 0 ? "Free" : `$${plan.monthlyCost.toFixed(2)}`}
                   </p>
-                  {bundlePromo && (
-                    <PlanPromoCallout summary={bundlePromo} className="mt-3 border-t border-border/40 pt-3" />
-                  )}
+                  <p className="mt-0.5 text-[10px] text-muted-foreground">/month · catalog bundle</p>
+                  <PlanPromoCallout
+                    summary={
+                      bundlePromo ?? {
+                        baseMonthlyUsd: plan.monthlyCost,
+                        showPromoLine: false,
+                      }
+                    }
+                    className="mt-3 border-t border-border/40 pt-3"
+                  />
                 </div>
               </div>
               {plan.monthlyCost > 0 && (
@@ -355,7 +362,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                       </div>
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-foreground">
-                          +{upgradeStats.newlyWatchable} more watchable games
+                          +{upgradeStats.newlyWatchable} more watchable games this season
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Upgrade to {upgrade.toPlanName} for +${upgradeStats.costDelta.toFixed(2)}/mo

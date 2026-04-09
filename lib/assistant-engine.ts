@@ -8,11 +8,8 @@ import type { DemoUserState } from "@/lib/demo-user"
 import {
   classifyRecommendedPlans,
   calculateIncrementalPlanValue,
-  calculateNearTermIncrementalValue,
-  DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
   estimateMonthlyCostForConnectedServices,
   getCurrentCoverageBaseline,
-  getUpcomingCoverageWindow,
 } from "@/lib/optimizer-engine"
 import { getOptimizerPlanById, type OptimizerScope } from "@/lib/optimizer-plans"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
@@ -66,18 +63,16 @@ export interface MissingGamesAnswer {
   summary: string
   baseline: {
     scope: OptimizerScope
-    sampleWatchable: number
-    sampleTotal: number
+    gamesWatchable: number
+    totalGames: number
     coveragePercent: number
   }
   missingGames: MissingGameRow[]
   upgradeHint: {
     planId: string | null
     planName: string | null
-    /** Unlocks on the deterministic sample schedule (same as incremental baseline). */
-    newlyWatchableOnSample: number
-    /** Unlocks in the rolling near-term window (same days as the optimizer, default 7) on engine games. */
-    newlyWatchableNearTerm?: number
+    /** Catalog delta vs current footprint: upgraded plan gamesWatchable − baseline (season). */
+    unlockMoreGamesThisSeason: number
     incrementalCost: number
   }
   reasons: string[]
@@ -135,7 +130,7 @@ function gamesMatchingScope(scope: OptimizerScope): Game[] {
   )
 }
 
-/** Next 7 days from local start of today (demo-friendly “this week”). */
+/** Rolling window of engine games for the optional detail list (not used for season coverage totals). */
 function gamesInRollingWeek(scope: OptimizerScope, now = new Date()): Game[] {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
@@ -156,7 +151,7 @@ export function answerWatchQuestion(
     return {
       type: "watch-question",
       headline: "Game not found",
-      summary: "That game id is not in the demo schedule.",
+      summary: "That game id is not in the schedule.",
       status: "not-available",
       primaryAction: { label: "Browse home schedule", href: "/" },
       reasons: [`No game matches id "${gameId}".`],
@@ -286,21 +281,10 @@ export function answerPlanQuestion(
     )
   }
 
-  const nearWindow = getUpcomingCoverageWindow(
-    scope,
-    userState,
-    DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
-    new Date()
+  const seasonBaseline = getCurrentCoverageBaseline(scope, userState)
+  reasons.push(
+    `This season with your current services: ${seasonBaseline.gamesWatchable} of ${seasonBaseline.totalGames} games watchable (${seasonBaseline.coveragePercent}%).`
   )
-  if (nearWindow.totalGames > 0) {
-    reasons.push(
-      `Next ${nearWindow.days} days (demo schedule): ${nearWindow.gamesWatchable} of ${nearWindow.totalGames} games watchable (${nearWindow.coveragePercent}%) with your current services.`
-    )
-  } else {
-    reasons.push(
-      `Next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days: no engine games for this scope on the demo calendar—season/sample framing still applies in the optimizer.`
-    )
-  }
 
   return {
     type: "plan-question",
@@ -340,56 +324,31 @@ export function answerMissingGamesQuestion(
   const bestId = classified.bestValuePlanId ?? classified.fullCoveragePlanId
   const bestPlan = bestId ? getOptimizerPlanById(bestId) : undefined
 
-  let newlyWatchableSample = 0
-  let newlyWatchableNearTerm = 0
+  let unlockMoreGamesThisSeason = 0
   let incrementalCost = 0
   if (bestPlan) {
     const inc = calculateIncrementalPlanValue(bestPlan, scope, userState)
-    newlyWatchableSample = inc.newlyWatchableGames
+    unlockMoreGamesThisSeason = inc.newlyWatchableGames
     incrementalCost = inc.incrementalCost
-    const nearInc = calculateNearTermIncrementalValue(
-      bestPlan,
-      scope,
-      userState,
-      DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
-      now
-    )
-    newlyWatchableNearTerm = nearInc.newlyWatchableGames
   }
-
-  const upcoming = getUpcomingCoverageWindow(
-    scope,
-    userState,
-    DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
-    now
-  )
-  const effectiveUnlock = Math.max(newlyWatchableSample, newlyWatchableNearTerm)
 
   const reasons: string[] = [
-    `On the demo schedule for ${SCOPE_HEADLINE[scope]}, you can watch ${baseline.gamesWatchable} of ${baseline.totalGames} sample games with your current services (${baseline.coveragePercent}%).`,
+    `This season, with your current services you can watch ${baseline.gamesWatchable} of ${baseline.totalGames} games for ${SCOPE_HEADLINE[scope]} (${baseline.coveragePercent}%).`,
   ]
-  if (upcoming.totalGames > 0) {
-    reasons.push(
-      `Next ${upcoming.days} days on the demo schedule: ${upcoming.gamesWatchable} of ${upcoming.totalGames} games watchable (${upcoming.coveragePercent}%) with your current services.`
-    )
-  }
 
   if (missing.length === 0) {
-    reasons.push("Every game in the next 7 days for this scope is watchable with your current setup.")
+    reasons.push("Every game in this short window on the schedule is watchable with your current setup.")
   } else {
     reasons.push(
-      `${missing.length} game(s) in the next 7 days are not fully watchable on video — see the list below.`
+      `${missing.length} game(s) in this window are not fully watchable on video — see the list below.`
     )
-    if (bestPlan && effectiveUnlock > 0) {
+    if (bestPlan && unlockMoreGamesThisSeason > 0) {
       reasons.push(
-        `The “${bestPlan.name}” bundle unlocks about ${effectiveUnlock} more watchable game(s) where it helps most—up to ${Math.max(
-          newlyWatchableSample,
-          0
-        )} on the full sample and ${Math.max(newlyWatchableNearTerm, 0)} in the next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days (≈ +$${incrementalCost.toFixed(2)}/mo vs your current priced services).`
+        `“${bestPlan.name}” unlocks about ${unlockMoreGamesThisSeason} more games this season (≈ +$${incrementalCost.toFixed(2)}/mo vs your current priced services).`
       )
     } else if (bestPlan) {
       reasons.push(
-        `Consider the “${bestPlan.name}” plan for more coverage; incremental unlocks are limited on both the sample and the next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days for your current entitlements.`
+        `Consider “${bestPlan.name}” for more season coverage; incremental unlocks are small for your current entitlements.`
       )
     }
   }
@@ -399,22 +358,19 @@ export function answerMissingGamesQuestion(
     headline: `Missing video — ${SCOPE_HEADLINE[scope]}`,
     summary:
       missing.length === 0
-        ? "You are not missing watchable games in the next week for this scope."
-        : `You are missing full video for ${missing.length} upcoming game(s). Open a game for details or review plans.`,
+        ? "No video gaps in this window—see Details for season coverage."
+        : `You’re missing full video for ${missing.length} game(s) below. Compare plans to improve season coverage.`,
     baseline: {
       scope,
-      sampleWatchable: baseline.gamesWatchable,
-      sampleTotal: baseline.totalGames,
+      gamesWatchable: baseline.gamesWatchable,
+      totalGames: baseline.totalGames,
       coveragePercent: baseline.coveragePercent,
     },
     missingGames: missing,
     upgradeHint: {
       planId: bestId,
       planName: bestPlan?.name ?? null,
-      newlyWatchableOnSample: newlyWatchableSample,
-      ...(newlyWatchableNearTerm > 0
-        ? { newlyWatchableNearTerm: newlyWatchableNearTerm }
-        : {}),
+      unlockMoreGamesThisSeason,
       incrementalCost,
     },
     reasons,
@@ -461,7 +417,7 @@ export function createSuggestedPrompts(userState: DemoUserState): SuggestedPromp
   }
 
   prompts.push({ text: "What’s the cheapest way to follow both teams?" })
-  prompts.push({ text: "What games am I missing this week?" })
+  prompts.push({ text: "What games am I missing on video?" })
 
   const hasVideo = userState.connectedServiceIds.some((id) =>
     ["espn-plus", "mlb-tv", "fanduel-sports", "max"].includes(id)

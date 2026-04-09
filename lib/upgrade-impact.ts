@@ -3,11 +3,7 @@ import {
   getOptimizerPlanById,
   type OptimizerScope,
 } from "@/lib/optimizer-plans"
-import {
-  getPlanCoverage,
-  getCoverageStats,
-  type GameCoverage,
-} from "@/lib/plan-coverage"
+import { getPlanCoverage, type GameCoverage } from "@/lib/plan-coverage"
 import { PROVIDER_LABEL } from "@/lib/streaming-service-ids"
 
 export interface UpgradeImpact {
@@ -114,8 +110,8 @@ function watchProviderAfterUpgrade(toRow: GameCoverage): string {
 }
 
 /**
- * Games that move listen-only | unavailable → watchable between two plans, using the same
- * sample schedule and `resolveGameAccess` path as Plan Details (`getPlanCoverage`).
+ * Example matchups that move listen-only | unavailable → watchable between two plans, using
+ * `getPlanCoverage` / `resolveGameAccess` (illustrative list; headline upgrade stats use season catalog).
  */
 export function computeUnlockedGamesForUpgrade(
   fromPlanId: string,
@@ -152,10 +148,6 @@ export function computeUnlockedGamesForUpgrade(
   return out
 }
 
-function countUnlockedGamesForUpgrade(fromPlanId: string, toPlanId: string): number {
-  return computeUnlockedGamesForUpgrade(fromPlanId, toPlanId).length
-}
-
 function buildUpgradeImpact(def: UpgradeDef): UpgradeImpact {
   const from = getOptimizerPlanById(def.fromPlanId)
   const to = getOptimizerPlanById(def.toPlanId)
@@ -188,40 +180,52 @@ export function getUpgradesFromPlan(planId: string): UpgradeImpact[] {
   return UPGRADE_DEFS.filter((u) => u.fromPlanId === planId).map(buildUpgradeImpact)
 }
 
-export function getUpgradeImpactStats(upgrade: UpgradeImpact) {
+export interface UpgradeImpactStats {
+  /** Additional watchable games this season (catalog `to` − `from`). */
+  newlyWatchable: number
+  costDelta: number
+  costPerNewGame: number
+  /** Same as `catalogCurrentWatchable` (legacy field for callers). */
+  currentWatchable: number
+  upgradedWatchable: number
+  totalGames: number
+  catalogTotalGames: number
+  catalogCurrentWatchable: number
+  catalogUpgradedWatchable: number
+  catalogCurrentPercent: number
+  catalogUpgradedPercent: number
+}
+
+export function getUpgradeImpactStats(upgrade: UpgradeImpact): UpgradeImpactStats {
   const fromPlan = getOptimizerPlanById(upgrade.fromPlanId)
-  const fallback = { watchable: 0, total: 0 }
+  const toPlan = getOptimizerPlanById(upgrade.toPlanId)
 
-  const newlyWatchable = countUnlockedGamesForUpgrade(
-    upgrade.fromPlanId,
-    upgrade.toPlanId
+  const catalogTotalGames = fromPlan?.totalGames ?? toPlan?.totalGames ?? 0
+  const catalogCurrentWatchable = fromPlan?.gamesWatchable ?? 0
+  const catalogUpgradedWatchable = toPlan?.gamesWatchable ?? 0
+  const catalogCurrentPercent = fromPlan?.coveragePercent ?? 0
+  const catalogUpgradedPercent = toPlan?.coveragePercent ?? 0
+
+  const newlyWatchable = Math.max(
+    0,
+    catalogUpgradedWatchable - catalogCurrentWatchable
   )
-
-  if (!fromPlan) {
-    return {
-      newlyWatchable,
-      costDelta: upgrade.costDelta,
-      costPerNewGame:
-        newlyWatchable > 0 ? Math.round((upgrade.costDelta / newlyWatchable) * 100) / 100 : 0,
-      currentWatchable: fallback.watchable,
-      upgradedWatchable: fallback.watchable,
-      totalGames: fallback.total,
-    }
-  }
-
-  const filter = fromPlan.scope
-  const fromCov = getPlanCoverage(upgrade.fromPlanId, filter)
-  const toCov = getPlanCoverage(upgrade.toPlanId, filter)
-  const fromS = getCoverageStats(fromCov)
-  const toS = getCoverageStats(toCov)
+  const costPerNewGame =
+    newlyWatchable > 0
+      ? Math.round((upgrade.costDelta / newlyWatchable) * 100) / 100
+      : 0
 
   return {
     newlyWatchable,
     costDelta: upgrade.costDelta,
-    costPerNewGame:
-      newlyWatchable > 0 ? Math.round((upgrade.costDelta / newlyWatchable) * 100) / 100 : 0,
-    currentWatchable: fromS.watchable,
-    upgradedWatchable: toS.watchable,
-    totalGames: fromS.total,
+    costPerNewGame,
+    currentWatchable: catalogCurrentWatchable,
+    upgradedWatchable: catalogUpgradedWatchable,
+    totalGames: catalogTotalGames,
+    catalogTotalGames,
+    catalogCurrentWatchable,
+    catalogUpgradedWatchable,
+    catalogCurrentPercent,
+    catalogUpgradedPercent,
   }
 }

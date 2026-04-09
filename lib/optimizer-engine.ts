@@ -11,17 +11,13 @@ import {
   type UpcomingCoverageWindow,
 } from "@/lib/near-term-coverage"
 import {
-  getSampleCoverageCounts,
-  getSampleTransitionCounts,
-} from "@/lib/plan-coverage"
-import {
   getPlansForScope,
   type OptimizerPlan,
   type OptimizerScope,
 } from "@/lib/optimizer-plans"
 import { demoMonthlyPriceUsd } from "@/lib/streaming-service-ids"
 
-/** Sample-schedule baseline for the user’s current Connected Services (same games as Plan Details). */
+/** Season-catalog baseline for the user’s current Connected Services (same model as `OptimizerPlan`). */
 export interface CurrentCoverageBaseline {
   scope: OptimizerScope
   gamesWatchable: number
@@ -30,7 +26,7 @@ export interface CurrentCoverageBaseline {
   coveragePercent: number
 }
 
-/** Upgrade delta vs current setup on the sample schedule + incremental cost (Upgrade Impact–aligned). */
+/** Upgrade delta vs current setup on the season catalog + incremental cost. */
 export interface IncrementalPlanValue {
   newlyWatchableGames: number
   newlyListenableGames: number
@@ -71,32 +67,73 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100
 }
 
+function serviceSetsEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  const sa = [...a].sort()
+  const sb = [...b].sort()
+  return sa.every((v, i) => v === sb[i])
+}
+
 /**
- * Baseline from `userState` on the deterministic **sample** schedule for `scope`
- * (`resolveGameAccess` per game). For real engine games in a rolling window, use
- * {@link getUpcomingCoverageWindow}. Not to be confused with catalog season totals on `OptimizerPlan`.
+ * Season catalog baseline: map `connectedServiceIds` to the same `gamesWatchable` / `totalGames` /
+ * `coveragePercent` model as {@link OptimizerPlan}.
+ *
+ * 1) Exact services match → that catalog row.
+ * 2) Else best catalog row (non‑radio) whose `servicesIncluded` is covered by the user — highest
+ *    `gamesWatchable` (user has at least that bundle’s entitlements).
+ * 3) Else watchable 0 with season `totalGames` for the scope (from Full Coverage row when present).
+ *
+ * Sample / near‑term schedules are not used here (see `getSampleCoverageCounts`, `getUpcomingCoverageWindow`).
  */
 export function getCurrentCoverageBaseline(
   scope: OptimizerScope,
   userState: DemoUserState
 ): CurrentCoverageBaseline {
-  const c = getSampleCoverageCounts(scope, userState)
-  const coveragePercent =
-    c.totalGames > 0 ? Math.round((c.gamesWatchable / c.totalGames) * 100) : 0
+  const plans = getPlansForScope(scope)
+  const ids = userState.connectedServiceIds
+  const userSet = new Set(ids)
+
+  const fullRow = plans.find((p) => p.tier === "full")
+  const seasonTotalFallback = fullRow?.totalGames ?? plans.find((p) => p.tier !== "radio")?.totalGames ?? 0
+
+  const exact = plans.find((p) => serviceSetsEqual(p.servicesIncluded, ids))
+  const chosen =
+    exact ??
+    plans
+      .filter((p) => p.tier !== "radio")
+      .filter((p) => p.servicesIncluded.every((s) => userSet.has(s)))
+      .reduce<OptimizerPlan | null>(
+        (best, p) =>
+          !best || p.gamesWatchable > best.gamesWatchable ? p : best,
+        null
+      )
+
+  if (!chosen) {
+    const tg = seasonTotalFallback
+    return {
+      scope,
+      gamesWatchable: 0,
+      gamesListenOnly: 0,
+      totalGames: tg,
+      coveragePercent: 0,
+    }
+  }
+
   return {
     scope,
-    gamesWatchable: c.gamesWatchable,
-    gamesListenOnly: c.gamesListenOnly,
-    totalGames: c.totalGames,
-    coveragePercent,
+    gamesWatchable: chosen.gamesWatchable,
+    gamesListenOnly: chosen.gamesListenOnly,
+    totalGames: chosen.totalGames,
+    coveragePercent: chosen.coveragePercent,
   }
 }
 
 /**
  * What changes if the user adopts `plan.servicesIncluded`, vs their current entitlements.
- * Uses the same sample games and resolver as Plan Details / Upgrade Impact.
+ * Unlock counts use **season catalog** fields (same basis as {@link OptimizerPlan} and
+ * {@link getCurrentCoverageBaseline}). Sample-transition helpers remain in `plan-coverage.ts` for other use.
  *
- * `scope` must match `plan.scope`; otherwise throws so callers don’t mix Blues sample with a Cardinals plan.
+ * `scope` must match `plan.scope`.
  */
 export function calculateIncrementalPlanValue(
   plan: OptimizerPlan,
@@ -115,17 +152,21 @@ export function calculateIncrementalPlanValue(
   const baselineCost = estimateMonthlyCostForConnectedServices(userState)
   const incrementalCost = round2(plan.monthlyCost - baselineCost)
 
-  const t = getSampleTransitionCounts(scope, userState, plan.servicesIncluded)
+  const base = getCurrentCoverageBaseline(scope, userState)
+  const newlyWatchableGames = Math.max(0, plan.gamesWatchable - base.gamesWatchable)
+  const lostWatchableGames = Math.max(0, base.gamesWatchable - plan.gamesWatchable)
+  const newlyListenableGames = Math.max(0, plan.gamesListenOnly - base.gamesListenOnly)
+  const lostListenableGames = Math.max(0, base.gamesListenOnly - plan.gamesListenOnly)
 
   const costPerNewWatchableGame = round2(
-    incrementalCost / Math.max(1, t.newlyWatchableGames)
+    incrementalCost / Math.max(1, newlyWatchableGames)
   )
 
   return {
-    newlyWatchableGames: t.newlyWatchableGames,
-    newlyListenableGames: t.newlyListenableGames,
-    lostWatchableGames: t.lostWatchableGames,
-    lostListenableGames: t.lostListenableGames,
+    newlyWatchableGames,
+    newlyListenableGames,
+    lostWatchableGames,
+    lostListenableGames,
     incrementalServices,
     incrementalCost,
     costPerNewWatchableGame,
@@ -133,8 +174,8 @@ export function calculateIncrementalPlanValue(
 }
 
 /**
- * Incremental unlocks on **real** upcoming games in a rolling window (default 7 days), same
- * delta semantics as {@link calculateIncrementalPlanValue} but uses the engine schedule.
+ * Incremental unlocks on **real** upcoming games in a rolling window (default 7 days).
+ * Not used for primary user-facing copy; kept for future timing-aware features.
  */
 export function calculateNearTermIncrementalValue(
   plan: OptimizerPlan,
@@ -193,7 +234,7 @@ export function generatePlanCandidates(
  * Summarize one catalog plan vs current entitlements and cost estimate.
  *
  * - **incrementalCost**: catalog `monthlyCost` minus estimated spend for `userState.connectedServiceIds`.
- * - **costPerNewWatchableGame**: uses sample-schedule newly watchable games when > 0; otherwise falls back to `costPerWatchableGame`.
+ * - **costPerNewWatchableGame**: uses season-catalog newly watchable games vs {@link getCurrentCoverageBaseline}.
  */
 export function summarizePlanCandidate(
   plan: OptimizerPlan,
@@ -260,7 +301,7 @@ export interface ScoredPlanCandidate {
   planId: string
   summary: PlanCandidateSummary
   incremental: IncrementalPlanValue
-  /** “Next N days” delta on the engine schedule; used to layer immediacy onto Best Value scoring. */
+  /** Legacy field; identical to `incremental` now that scoring is catalog-only. */
   nearTermIncremental: IncrementalPlanValue
   score: PlanCandidateScore
 }
@@ -289,25 +330,18 @@ function comparePlanId(a: string, b: string): number {
  * Score a single catalog plan for recommendation buckets.
  * `bestValueScore` (non-radio): newlyWatchableGames*2 + coveragePercent*0.3 - incrementalCost*0.5 - incrementalServices*3.
  *
- * When `nearTermIncremental` is provided, the newly-watchable term uses
- * `max(sample, near-term)` so Best Value can reflect the next week without discarding the sample schedule.
+ * Uses season-catalog `incremental.newlyWatchableGames` only (near-term / sample are not blended here).
  */
 export function scorePlanCandidate(
   summary: PlanCandidateSummary,
   incremental: IncrementalPlanValue,
-  nearTermIncremental?: IncrementalPlanValue
+  _nearTermIncremental?: IncrementalPlanValue
 ): PlanCandidateScore {
   const isRadio = summary.tier === "radio"
   const cheapestEligible = !isRadio && summary.gamesWatchable > 0
   const fullCoverageEligible = !isRadio
 
-  const newlyWatchableForScore =
-    nearTermIncremental !== undefined
-      ? Math.max(
-          incremental.newlyWatchableGames,
-          nearTermIncremental.newlyWatchableGames
-        )
-      : incremental.newlyWatchableGames
+  const newlyWatchableForScore = incremental.newlyWatchableGames
 
   const rawBestValue =
     newlyWatchableForScore * BV_WEIGHT_NEW_WATCHABLE +
@@ -427,20 +461,18 @@ export function classifyRecommendedPlans(
   userState: DemoUserState
 ): ClassifiedRecommendations {
   const plans = generatePlanCandidates(scope, userState)
-  const nearTermNow = new Date()
 
   const scoredCandidates: ScoredPlanCandidate[] = plans.map((plan) => {
     const summary = summarizePlanCandidate(plan, userState)
     const incremental = calculateIncrementalPlanValue(plan, scope, userState)
-    const nearTermIncremental = calculateNearTermIncrementalValue(
-      plan,
-      scope,
-      userState,
-      DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
-      nearTermNow
-    )
-    const score = scorePlanCandidate(summary, incremental, nearTermIncremental)
-    return { planId: plan.id, summary, incremental, nearTermIncremental, score }
+    const score = scorePlanCandidate(summary, incremental)
+    return {
+      planId: plan.id,
+      summary,
+      incremental,
+      nearTermIncremental: incremental,
+      score,
+    }
   })
 
   scoredCandidates.sort((a, b) => {

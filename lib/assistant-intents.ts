@@ -42,6 +42,7 @@ function inferScope(n: string): OptimizerScope {
 function isMissingIntent(n: string): boolean {
   if (n.includes("missing")) return true
   if (n.includes("what am i missing")) return true
+  if (n.includes("on video")) return true
   if (n.includes("this week")) return true
   return false
 }

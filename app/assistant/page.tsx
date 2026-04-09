@@ -38,7 +38,7 @@ const DEMO_SUGGESTED_PROMPTS = [
   { icon: Tv, text: "Can I watch tonight’s Blues game?" },
   { icon: Tv, text: "Why can’t I watch the Cardinals tonight?" },
   { icon: TrendingUp, text: "What’s the cheapest way to follow both teams?" },
-  { icon: Calendar, text: "What games am I missing this week?" },
+  { icon: Calendar, text: "What games am I missing on video?" },
 ] as const
 
 const ICON_BY_PROMPT_TEXT: Record<string, LucideIcon> = Object.fromEntries(
@@ -115,7 +115,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
           kind: "fallback",
           headline: "Which game?",
           summary:
-            "Say if you mean the Blues or the Cardinals tonight — I’ll check your services against the demo schedule.",
+            "Say if you mean the Blues or the Cardinals tonight — I’ll check your services against the schedule.",
           prompts: promptTexts,
         },
       }
@@ -159,7 +159,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
       kind: "fallback",
       headline: "Not sure how to help with that yet",
       summary:
-        "Ask about watching a specific team’s game, compare plans, or see what you’re missing this week. Pick a prompt below to try the demo.",
+        "Ask about watching a specific game, compare plans, or see where you’re missing video. Pick a prompt below to try things out.",
       prompts: promptTexts,
     },
   }

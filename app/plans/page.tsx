@@ -15,7 +15,10 @@ import {
   Zap
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import {
+  classifyRecommendedPlans,
+  getCurrentCoverageBaseline,
+} from "@/lib/optimizer-engine"
 import {
   getAnnualCost,
   getPlansForScope,
@@ -50,6 +53,10 @@ export default function PlansPage() {
     [selectedTeam, state]
   )
   const bestValuePlanId = recommendations.bestValuePlanId
+  const currentBaseline = useMemo(
+    () => getCurrentCoverageBaseline(selectedTeam, state),
+    [selectedTeam, state]
+  )
 
   const teamLabels: Record<OptimizerScope, string> = {
     blues: "Blues Only",
@@ -85,37 +92,66 @@ export default function PlansPage() {
           ))}
         </div>
 
-        {/* Current Setup Info */}
-        <Card className="mb-6 border-border/50 bg-card/50 p-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <Info className="size-4 shrink-0 text-muted-foreground" />
-            <span className="text-muted-foreground">Your connected services:</span>
-            <span className="font-medium text-foreground">
-              {state.connectedServiceIds.length > 0
-                ? formatServiceIdList(state.connectedServiceIds)
-                : "None — add services to see accurate coverage"}
-            </span>
+        {/* Your current setup — season catalog coverage from connected services (same basis as catalog plans) */}
+        <Card className="mb-6 overflow-hidden border-border/50 bg-card/50 p-0">
+          <div className="border-b border-border/40 bg-secondary/20 px-4 py-2">
+            <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Your Current Plan
+            </p>
+            <p className="text-[10px] text-muted-foreground">
+              Season catalog · aligned to your connected services (or closest match)
+            </p>
           </div>
-          <Link
-            href="/settings/services"
-            className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-accent"
-            onClick={() =>
-              trackEvent(AnalyticsEvent.connectedServicesClick, {
-                ...analyticsBase("plans", state, {
-                  href: "/settings/services",
-                  label: "update_connected_services",
-                  scope: selectedTeam,
-                }),
-                recommended_plan_id: bestValuePlanId ?? undefined,
-              })
-            }
-          >
-            Update Connected Services
-            <ChevronRight className="size-4" />
-          </Link>
-          <p className="mt-2 text-xs text-muted-foreground">
-            If video is not available with your current plan, compare bundles below or add a service first.
-          </p>
+          <div className="p-4">
+            <div className="mb-4 flex items-end justify-between gap-3">
+              <div>
+                <p className="text-3xl font-bold tabular-nums text-foreground">
+                  {currentBaseline.coveragePercent}
+                  <span className="text-lg font-semibold text-muted-foreground">%</span>
+                </p>
+                <p className="text-xs text-muted-foreground">Watchable coverage</p>
+              </div>
+              <div className="text-right">
+                <p className="text-lg font-semibold tabular-nums text-foreground">
+                  {currentBaseline.gamesWatchable}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {" "}
+                    / {currentBaseline.totalGames}
+                  </span>
+                </p>
+                <p className="text-[10px] text-muted-foreground">games watchable</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 border-t border-border/40 pt-3 text-sm">
+              <Info className="size-4 shrink-0 text-muted-foreground" />
+              <span className="text-muted-foreground">Connected:</span>
+              <span className="font-medium text-foreground">
+                {state.connectedServiceIds.length > 0
+                  ? formatServiceIdList(state.connectedServiceIds)
+                  : "None — add services to see accurate coverage"}
+              </span>
+            </div>
+            <Link
+              href="/settings/services"
+              className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-accent"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.connectedServicesClick, {
+                  ...analyticsBase("plans", state, {
+                    href: "/settings/services",
+                    label: "update_connected_services",
+                    scope: selectedTeam,
+                  }),
+                  recommended_plan_id: bestValuePlanId ?? undefined,
+                })
+              }
+            >
+              Update Connected Services
+              <ChevronRight className="size-4" />
+            </Link>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Catalog plans below use the same season game totals for apples-to-apples comparison.
+            </p>
+          </div>
         </Card>
 
         {/* Plans List */}
@@ -212,6 +248,9 @@ export default function PlansPage() {
                   <div className="mb-5 grid grid-cols-3 gap-3">
                     {/* Monthly Cost */}
                     <div className="rounded-xl bg-secondary/50 p-3 text-center">
+                      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        List price
+                      </p>
                       <p className={cn(
                         "text-xl font-bold",
                         isRadioOnly ? "text-emerald-400" : isLogicBestValue ? "text-accent" : "text-foreground"
@@ -338,9 +377,12 @@ export default function PlansPage() {
 
         {/* Annual Cost Comparison */}
         <section className="mt-8">
-          <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+          <h2 className="mb-1 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Annual Cost Comparison
           </h2>
+          <p className="mb-4 text-[10px] text-muted-foreground">
+            Based on list price × 12; check each plan card for eligible intro offers.
+          </p>
           <Card className="border-border/50 p-4">
             <div className="space-y-3">
               {plans.filter(p => p.tier !== "radio").map((plan) => {

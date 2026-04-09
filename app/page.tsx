@@ -92,6 +92,11 @@ function SuggestedForYouCard({
         </div>
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold leading-snug text-foreground">{content.headline}</p>
+          {content.listPriceLine && (
+            <p className="mt-1.5 text-[11px] font-medium tabular-nums text-foreground/90">
+              {content.listPriceLine}
+            </p>
+          )}
           <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{content.summary}</p>
           {content.supportingLine && (
             <p className="mt-2 text-xs font-medium leading-relaxed text-foreground/80">

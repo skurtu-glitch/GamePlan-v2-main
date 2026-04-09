@@ -59,13 +59,15 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
   }
 
   const stats = getUpgradeImpactStats(upgrade)
-  const currentPercentage = Math.round((stats.currentWatchable / stats.totalGames) * 100)
-  const upgradedPercentage = Math.round((stats.upgradedWatchable / stats.totalGames) * 100)
+  const currentPercentage = stats.catalogCurrentPercent
+  const upgradedPercentage = stats.catalogUpgradedPercent
+  const catalogTotal = stats.catalogTotalGames
 
   const fromPlan = getOptimizerPlanById(upgrade.fromPlanId)
   const toPlan = getOptimizerPlanById(upgrade.toPlanId)
   const scope = scopeFromPlanId(upgrade.toPlanId)
   const recs = classifyRecommendedPlans(scope, state)
+  const fromBundlePromo = fromPlan ? getPlanBundlePromoSummary(fromPlan) : null
   const upgradedBundlePromo = toPlan ? getPlanBundlePromoSummary(toPlan) : null
   const introUpgradeStepMo =
     upgradedBundlePromo?.showPromoLine &&
@@ -100,12 +102,17 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
       {/* Main Content */}
       <main className="mx-auto w-full max-w-lg px-5 py-6">
         
-        {/* Before vs After Comparison */}
+        {/* Before vs After Comparison — catalog season totals (same basis as Plan Optimizer) */}
         <section className="mb-6">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+            Season catalog (Plan Optimizer basis)
+          </p>
           {/* Current Plan */}
           <Card className="mb-3 overflow-hidden border-border bg-secondary/20 p-0">
             <div className="border-b border-border/50 bg-secondary/30 px-4 py-2">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Current Plan</p>
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Current Plan
+              </p>
             </div>
             <div className="p-4">
               <div className="mb-3 flex items-center justify-between">
@@ -120,8 +127,18 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 />
               </div>
               <p className="text-xs text-muted-foreground">
-                {stats.currentWatchable} of {stats.totalGames} games watchable
+                {stats.catalogCurrentWatchable} of {catalogTotal} games watchable
               </p>
+              {fromPlan && fromPlan.monthlyCost > 0 && (
+                <p className="mt-2 text-[10px] text-muted-foreground">
+                  List price: ${fromPlan.monthlyCost.toFixed(2)}/mo
+                </p>
+              )}
+              {fromBundlePromo?.showPromoLine && (
+                <div className="mt-2 border-t border-border/40 pt-2">
+                  <PlanPromoCallout summary={fromBundlePromo} />
+                </div>
+              )}
             </div>
           </Card>
 
@@ -150,15 +167,23 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 />
               </div>
               <p className="text-xs text-emerald-400/80">
-                {stats.upgradedWatchable} of {stats.totalGames} games watchable
+                {stats.catalogUpgradedWatchable} of {catalogTotal} games watchable
               </p>
+              {toPlan && toPlan.monthlyCost > 0 && (
+                <p className="mt-2 text-[10px] text-emerald-400/80">
+                  List price: ${toPlan.monthlyCost.toFixed(2)}/mo
+                </p>
+              )}
             </div>
           </Card>
         </section>
 
-        {/* Delta Highlight */}
+        {/* Delta Highlight — season catalog */}
         <Card className="mb-6 overflow-hidden border-accent/30 bg-gradient-to-br from-accent/10 to-emerald-500/5 p-0">
           <div className="p-5">
+            <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+              This season
+            </p>
             <div className="flex items-center justify-between">
               {/* Games gained */}
               <div className="flex items-center gap-3">
@@ -167,7 +192,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 </div>
                 <div>
                   <p className="text-3xl font-bold text-emerald-400">+{stats.newlyWatchable}</p>
-                  <p className="text-xs text-muted-foreground">more games to watch</p>
+                  <p className="text-xs text-muted-foreground">more watchable games</p>
                 </div>
               </div>
               
@@ -184,7 +209,15 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
           <Card className="mb-6 overflow-hidden border-border/60 bg-card/40 p-0">
             <div className="px-4 py-3">
               <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-                Upgraded plan — intro offers
+                Upgraded plan — offers (when fresh / confident)
+              </p>
+              <p className="mb-2 text-[10px] text-muted-foreground">
+                List{" "}
+                {toPlan && toPlan.monthlyCost > 0
+                  ? `$${toPlan.monthlyCost.toFixed(2)}/mo`
+                  : "—"}
+                {" "}
+                · intro estimate below when eligible
               </p>
               <PlanPromoCallout summary={upgradedBundlePromo} />
               {introUpgradeStepMo !== null && (
@@ -225,14 +258,15 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
           </Card>
         </section>
 
-        {/* Games Unlocked List */}
+        {/* Example matchups (illustrative list; headline count is season catalog) */}
         <section className="mb-6">
           <h3 className="mb-2 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            Games Unlocked ({stats.newlyWatchable})
+            Example games that become watchable
           </h3>
-          {stats.newlyWatchable > upgrade.unlockedGames.length && (
+          {upgrade.unlockedGames.length > 0 && (
             <p className="mb-3 text-xs text-muted-foreground">
-              First {upgrade.unlockedGames.length} listed — same sample games as Plan Details
+              Showing {upgrade.unlockedGames.length} example matchup
+              {upgrade.unlockedGames.length === 1 ? "" : "s"} — see Plan Details for the full list view.
             </p>
           )}
           <div className="mt-1 flex flex-col gap-2">
@@ -339,7 +373,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
             </Link>
           </Button>
           <p className="mt-2 text-center text-xs text-muted-foreground">
-            +${stats.costDelta.toFixed(2)}/mo for {stats.newlyWatchable} more watchable games
+            +${stats.costDelta.toFixed(2)}/mo list · +{stats.newlyWatchable} more watchable this season
           </p>
         </div>
       </div>

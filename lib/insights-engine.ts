@@ -108,7 +108,7 @@ function buildMissingGamesInsight(
   const first = ans.missingGames[0]
   const extra =
     ans.missingGames.length > 1
-      ? ` (+${ans.missingGames.length - 1} more this week)`
+      ? ` (+${ans.missingGames.length - 1} more in this window)`
       : ""
 
   return {
@@ -145,8 +145,8 @@ function buildPlanRecommendationInsight(
     headline: `Best value: ${plan.name}`,
     summary:
       inc.newlyWatchableGames > 0
-        ? `Optimizer picks “${plan.name}” — about ${inc.newlyWatchableGames} more watchable game(s) on the sample schedule for roughly +$${inc.incrementalCost.toFixed(2)}/mo vs your priced services.`
-        : `Optimizer highlights “${plan.name}” for this footprint (no extra sample unlocks; compare catalog coverage).`,
+        ? `Optimizer picks “${plan.name}” — about ${inc.newlyWatchableGames} more watchable games this season for roughly +$${inc.incrementalCost.toFixed(2)}/mo vs your priced services.`
+        : `Optimizer highlights “${plan.name}” for this footprint (small season unlock vs your stack; compare catalog coverage).`,
     primaryAction: { label: "Compare plans", href: "/plans" },
     secondaryAction: { label: "Plan details", href: `/plans/${plan.id}` },
   }
@@ -157,8 +157,8 @@ function buildCoverageSummaryInsight(userState: DemoUserState): UserInsight {
   return {
     id: "insight-coverage-baseline",
     type: "coverage-summary",
-    headline: "Sample-schedule coverage",
-    summary: `With your current services you can watch ${b.gamesWatchable} of ${b.totalGames} games on the demo sample (${b.coveragePercent}%) for both teams.`,
+    headline: "Season coverage",
+    summary: `With your current services you can watch ${b.gamesWatchable} of ${b.totalGames} games this season (${b.coveragePercent}%) for both teams.`,
     primaryAction: { label: "View plans", href: "/plans" },
     secondaryAction: { label: "Assistant", href: "/assistant" },
   }
@@ -168,9 +168,9 @@ function buildCoverageSummaryInsight(userState: DemoUserState): UserInsight {
  * Ordered insights: most time-sensitive / actionable first, then context.
  *
  * 1. Next non-watchable upcoming game (watch-upgrade)
- * 2. Rolling-week gaps from real schedule + assistant missing-games pipeline
- * 3. Optimizer best-value + incremental sample value (plan-recommendation)
- * 4. Baseline sample coverage (coverage-summary)
+ * 2. Rolling-window gaps from real schedule + assistant missing-games pipeline (detail list)
+ * 3. Optimizer best-value + season catalog unlock (plan-recommendation)
+ * 4. Baseline season coverage (coverage-summary)
  */
 export function getUserInsights(
   userState: DemoUserState,

@@ -1,17 +1,13 @@
 /**
- * Home “Suggested for You” copy — derived from optimizer + sample baseline (live with demo user state).
+ * Home “Suggested for You” copy — season catalog coverage + optimizer (live with demo user state).
  */
 
 import type { DemoUserState } from "@/lib/demo-user"
 import {
   calculateIncrementalPlanValue,
-  calculateNearTermIncrementalValue,
   classifyRecommendedPlans,
-  DEFAULT_NEAR_TERM_OPTIMIZER_DAYS,
   getCurrentCoverageBaseline,
-  getUpcomingCoverageWindow,
   type CurrentCoverageBaseline,
-  type UpcomingCoverageWindow,
 } from "@/lib/optimizer-engine"
 import {
   getOptimizerPlanById,
@@ -24,10 +20,12 @@ import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 export const HOME_SUGGESTED_CTA_LABEL = "Review Details in Plan Optimizer" as const
 
 export interface HomeInsightCardContent {
-  /** Sample-schedule baseline (same source as optimizer Home scope). */
+  /** Season-catalog baseline (same basis as Plan Optimizer cards). */
   wowMetricLine: string
   headline: string
   summary: string
+  /** Catalog list price for the focal plan (always shown when a plan is in play). */
+  listPriceLine?: string
   supportingLine?: string
   /** From {@link getPlanBundlePromoSummary}; only when promos are fresh + medium/high confidence. */
   promoSupportingLine?: string
@@ -36,25 +34,16 @@ export interface HomeInsightCardContent {
   ctaHref: string
 }
 
-/** Shown above/below the Suggested card; values from `getCurrentCoverageBaseline` (sample schedule). */
 export function formatHomeWowMetric(baseline: CurrentCoverageBaseline): string {
-  return `You can currently watch ${baseline.gamesWatchable} of ${baseline.totalGames} upcoming games (${baseline.coveragePercent}%)`
-}
-
-/** Near-term line from real engine games in the rolling window (e.g. next 7 days). */
-export function formatHomeWowMetricNearTerm(window: UpcomingCoverageWindow): string {
-  if (window.totalGames === 0) {
-    return `No games for your teams in the next ${window.days} days on the demo schedule`
-  }
-  return `In the next ${window.days} days, you can watch ${window.gamesWatchable} of ${window.totalGames} games (${window.coveragePercent}%)`
+  return `You can watch ${baseline.gamesWatchable} of ${baseline.totalGames} games this season (${baseline.coveragePercent}% coverage)`
 }
 
 const HOME_BEST_VALUE_PLAN_HEADLINE =
   "Watch significantly more of your games with the Best Value plan" as const
 
-function formatAddsAndUnlocksLine(serviceCount: number, newlyWatchable: number): string {
+function formatAddsAndUnlocksLine(serviceCount: number, unlockSeason: number): string {
   const svc = serviceCount === 1 ? "service" : "services"
-  return `Adds ${serviceCount} ${svc} and unlocks ~${newlyWatchable} more games you can watch`
+  return `Adds ${serviceCount} ${svc} · Unlock ${unlockSeason} more games this season`
 }
 
 const VIDEO_SERVICE_IDS = new Set([
@@ -97,13 +86,18 @@ function withRecommendedPlanPromo(
   now: Date = new Date()
 ): HomeInsightCardContent {
   if (!plan) return insight
+  const listPriceLine =
+    plan.monthlyCost > 0
+      ? `List price: $${plan.monthlyCost.toFixed(2)}/mo · ${plan.name}`
+      : `List price: Free · ${plan.name}`
+
   const bundle = getPlanBundlePromoSummary(plan, now)
   if (
     !bundle.showPromoLine ||
     bundle.introEffectiveMonthlyUsd === undefined ||
     bundle.introPeriodMonths === undefined
   ) {
-    return insight
+    return { ...insight, listPriceLine }
   }
 
   const savings = bundle.savingsVsBaseMonthlyUsd ?? 0
@@ -116,6 +110,7 @@ function withRecommendedPlanPromo(
 
   return {
     ...insight,
+    listPriceLine,
     promoSupportingLine: `${softer}${numeric}${listRef}`.trim(),
     promoFreshnessLine: bundle.freshnessLine,
   }
@@ -132,11 +127,7 @@ export function buildHomeSuggestedInsight(
 
   const ctaLabel = HOME_SUGGESTED_CTA_LABEL
   const baseline = getCurrentCoverageBaseline(scope, userState)
-  const upcoming = getUpcomingCoverageWindow(
-    scope,
-    userState,
-    DEFAULT_NEAR_TERM_OPTIMIZER_DAYS
-  )
+  const wowMetricLine = formatHomeWowMetric(baseline)
   const classified = classifyRecommendedPlans(scope, userState)
   const bestPlan =
     classified.bestValuePlanId != null
@@ -147,20 +138,15 @@ export function buildHomeSuggestedInsight(
       ? getOptimizerPlanById(classified.fullCoveragePlanId)
       : undefined
 
-  const wowMetricLine =
-    upcoming.totalGames > 0
-      ? formatHomeWowMetricNearTerm(upcoming)
-      : formatHomeWowMetric(baseline)
-
   if (fullPlan && hasAllPlanServices(fullPlan, userState)) {
     return withRecommendedPlanPromo(fullPlan, {
       wowMetricLine,
       headline: "You're at full coverage for both teams",
       summary:
-        "Your connected services match the Full Coverage bundle on the demo catalog—sample games for the Blues and Cardinals resolve as watchable with your current footprint.",
+        "Your connected services match the Full Coverage catalog plan for the Blues and Cardinals.",
       supportingLine:
         baseline.totalGames > 0
-          ? `${baseline.gamesWatchable} of ${baseline.totalGames} sample games are watchable with the teams you follow.`
+          ? `${baseline.gamesWatchable} of ${baseline.totalGames} season games are watchable with the teams you follow.`
           : undefined,
       ctaLabel,
       ctaHref: `/plans/${fullPlan.id}`,
@@ -173,7 +159,7 @@ export function buildHomeSuggestedInsight(
       wowMetricLine,
       headline: "Add a video service to unlock watchable games",
       summary:
-        "You're on audio-only access today. The Plan Optimizer shows the lightest video stacks that turn radio follow-alongs into watches on the demo sample—without jumping straight to full coverage.",
+        "You're on audio-only access today. The Plan Optimizer shows the lightest video stacks that turn radio follow-alongs into watches—without jumping straight to full coverage.",
       supportingLine: bestPlan
         ? `Best Value on the catalog is “${bestPlan.name}”—review incremental cost and coverage there.`
         : undefined,
@@ -193,7 +179,7 @@ export function buildHomeSuggestedInsight(
       wowMetricLine,
       headline: "You're already aligned with Best Value",
       summary:
-        "Your subscriptions cover everything in the Best Value tier for this demo. Open the optimizer only if you want to compare against Full Coverage or rebalance cost.",
+        "Your subscriptions cover everything in the Best Value tier. Open the optimizer if you want to compare against Full Coverage or rebalance cost.",
       supportingLine:
         extras.length > 0
           ? `Full Coverage adds ${formatConjoinedList(extras)} if you want every national and overflow window.`
@@ -208,44 +194,28 @@ export function buildHomeSuggestedInsight(
       wowMetricLine,
       headline: "Compare bundles for your teams",
       summary:
-        "Use the Plan Optimizer to rank catalog plans by watchable games and monthly cost on the Blues + Cardinals sample schedule.",
+        "Use the Plan Optimizer to rank catalog plans by watchable games and monthly cost for both teams this season.",
       ctaLabel,
       ctaHref: "/plans",
     }
   }
 
   const inc = calculateIncrementalPlanValue(bestPlan, scope, userState)
-  const nearInc = calculateNearTermIncrementalValue(
-    bestPlan,
-    scope,
-    userState,
-    DEFAULT_NEAR_TERM_OPTIMIZER_DAYS
-  )
-  const effectiveNewlyWatchable = Math.max(
-    inc.newlyWatchableGames,
-    nearInc.newlyWatchableGames
-  )
+  const unlockSeason = inc.newlyWatchableGames
+  const missingWatchable =
+    baseline.totalGames > 0 ? Math.max(0, baseline.totalGames - baseline.gamesWatchable) : 0
   const keyAdds = inc.incrementalServices.filter((id) => VIDEO_SERVICE_IDS.has(id))
   const keyAddNames = keyAdds.map(serviceDisplayName)
   const haveNames = videoServicesConnected(userState).map(serviceDisplayName)
 
-  const missingWatchableSample =
-    baseline.totalGames > 0 ? Math.max(0, baseline.totalGames - baseline.gamesWatchable) : 0
-  const missingWatchableNear =
-    upcoming.totalGames > 0
-      ? Math.max(0, upcoming.totalGames - upcoming.gamesWatchable)
-      : 0
-  const missingWatchable = Math.max(missingWatchableSample, missingWatchableNear)
-
   const strongUnlock =
-    effectiveNewlyWatchable >= 6 ||
-    (missingWatchable > 0 && effectiveNewlyWatchable / missingWatchable >= 0.55)
+    unlockSeason >= 6 || (missingWatchable > 0 && unlockSeason / missingWatchable >= 0.55)
 
   if (inc.newlyWatchableGames <= 0 && inc.incrementalCost <= 0) {
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: "Fine-tune your stack in the Plan Optimizer",
-      summary: `You're at ${baseline.coveragePercent}% watchable on the demo sample (${baseline.gamesWatchable} of ${baseline.totalGames} games). Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up.`,
+      summary: `You're at ${baseline.coveragePercent}% watchable this season (${baseline.gamesWatchable} of ${baseline.totalGames} games). Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up.`,
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
@@ -260,10 +230,7 @@ export function buildHomeSuggestedInsight(
       summary: `${havePart}Adding ${formatConjoinedList(
         keyAddNames
       )} fills the key gaps—unlocking most of the games you're currently missing without paying for full coverage.`,
-      supportingLine: formatAddsAndUnlocksLine(
-        inc.incrementalServices.length,
-        effectiveNewlyWatchable
-      ),
+      supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
@@ -276,30 +243,23 @@ export function buildHomeSuggestedInsight(
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
       summary: `${havePart}Adding ${keyAddNames[0]} fills a major gap—unlocking most of the games you're currently missing without paying for full coverage.`,
-      supportingLine: formatAddsAndUnlocksLine(
-        inc.incrementalServices.length,
-        effectiveNewlyWatchable
-      ),
+      supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
   }
 
-  if (effectiveNewlyWatchable > 0) {
+  if (unlockSeason > 0) {
     const havePart =
       haveNames.length > 0 ? `You already have ${formatConjoinedList(haveNames)}. ` : ""
     const addPart =
       keyAddNames.length > 0
         ? `Adding ${formatConjoinedList(
             keyAddNames
-          )} picks up about ${effectiveNewlyWatchable} more watchable game(s) on the demo schedule (or next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days, whichever is stronger) for roughly +$${inc.incrementalCost.toFixed(
-            2
-          )}/mo.`
+          )} unlocks about ${unlockSeason} more games this season for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
         : `“${
             bestPlan.name
-          }” picks up about ${effectiveNewlyWatchable} more watchable game(s) on the demo schedule (or next ${DEFAULT_NEAR_TERM_OPTIMIZER_DAYS} days, whichever is stronger) for roughly +$${inc.incrementalCost.toFixed(
-            2
-          )}/mo.`
+          }” unlocks about ${unlockSeason} more games this season for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
@@ -315,7 +275,7 @@ export function buildHomeSuggestedInsight(
     headline: "Optimize cost vs. coverage with Best Value",
     summary: `“${
       bestPlan.name
-    }” is still the catalog’s Best Value anchor for both teams—worth a pass in the optimizer even when sample unlocks are flat, especially if you’re weighing swaps across services.`,
+    }” is still the catalog’s Best Value anchor for both teams—worth a pass in the optimizer when you want to weigh swaps across services.`,
     ctaLabel,
     ctaHref: `/plans/${bestPlan.id}`,
   })

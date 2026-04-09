@@ -106,7 +106,8 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
   const mlbGames = filteredGames.filter(g => g.sport === "MLB")
   
   const isRadioOnly = plan.tier === "radio"
-  const isBestValue = plan.isBestValue === true
+  const isLogicBestValue =
+    planRecs.bestValuePlanId !== null && planRecs.bestValuePlanId === planId
   const isFull = plan.tier === "full"
 
   const seasonWatchable = plan.gamesWatchable
@@ -142,10 +143,10 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
             <h1 className="text-lg font-bold text-foreground">{plan.name}</h1>
             <p className="text-xs text-muted-foreground">Plan Details</p>
           </div>
-          {isBestValue && (
+          {isLogicBestValue && (
             <span className="flex items-center gap-1 rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
               <Sparkles className="size-3" />
-              Best
+              Best Value
             </span>
           )}
         </div>
@@ -256,18 +257,18 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
         {/* Plan Summary */}
         <Card className={cn(
           "mb-6 overflow-hidden border-border p-0",
-          isBestValue && "border-accent/50 ring-1 ring-accent/20"
+          isLogicBestValue && "border-accent/50 ring-1 ring-accent/20"
         )}>
           <div className="p-5">
             <div className="mb-4 flex items-start justify-between">
               <div className="flex items-center gap-3">
                 <div className={cn(
                   "flex size-11 items-center justify-center rounded-xl",
-                  isRadioOnly ? "bg-muted" : isBestValue ? "bg-accent/20" : isFull ? "bg-emerald-500/20" : "bg-secondary"
+                  isRadioOnly ? "bg-muted" : isLogicBestValue ? "bg-accent/20" : isFull ? "bg-emerald-500/20" : "bg-secondary"
                 )}>
                   {isRadioOnly ? (
                     <Headphones className="size-5 text-muted-foreground" />
-                  ) : isBestValue ? (
+                  ) : isLogicBestValue ? (
                     <TrendingUp className="size-5 text-accent" />
                   ) : isFull ? (
                     <Shield className="size-5 text-emerald-400" />
@@ -279,7 +280,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                   <p className="text-xs text-muted-foreground">Monthly Cost</p>
                   <p className={cn(
                     "text-xl font-bold",
-                    plan.monthlyCost === 0 ? "text-emerald-400" : isBestValue ? "text-accent" : "text-foreground"
+                    plan.monthlyCost === 0 ? "text-emerald-400" : isLogicBestValue ? "text-accent" : "text-foreground"
                   )}>
                     {plan.monthlyCost === 0 ? "Free" : `$${plan.monthlyCost.toFixed(2)}`}
                   </p>

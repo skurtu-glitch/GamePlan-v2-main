@@ -418,7 +418,8 @@ const TIER_SORT_ORDER: Record<OptimizerPlan["tier"], number> = {
 }
 
 /**
- * Logic-driven labels per scope (does not read `plan.isBestValue` from catalog — that flag is still used in UI until wired).
+ * Logic-driven recommendations per scope. **Best Value** for UI comes from {@link ClassifiedRecommendations.bestValuePlanId}
+ * (same scoring as here)—catalog plans do not carry a separate “best” flag.
  * `scoredCandidates` lists non–radio tiers first (cheapest → value → full), then Radio last.
  */
 export function classifyRecommendedPlans(

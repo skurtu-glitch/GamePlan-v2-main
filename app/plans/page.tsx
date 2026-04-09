@@ -153,7 +153,7 @@ export default function PlansPage() {
                   {isLogicBestValue && (
                     <div className="flex items-center gap-1.5 text-xs font-semibold text-accent-foreground">
                       <Sparkles className="size-3.5" />
-                      Best Option
+                      Best Value
                     </div>
                   )}
                 </div>

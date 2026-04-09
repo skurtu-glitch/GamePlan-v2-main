@@ -70,6 +70,8 @@ export interface WatchOption {
   reason: string
   hasSubscription?: boolean
   price?: string
+  /** Canonical service id when this row maps to `game.watch.providers` (for watch CTAs). */
+  serviceId?: string
 }
 
 export interface ListenFeed {

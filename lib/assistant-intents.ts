@@ -4,6 +4,11 @@
 
 import type { DemoUserState } from "@/lib/demo-user"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
+import {
+  hasWordBlues,
+  hasWordCardinals,
+  resolveEngineGameIdForWatchQuery,
+} from "@/lib/assistant-watch-resolve"
 
 export type AssistantIntentKind =
   | "watch-question"
@@ -17,24 +22,12 @@ export interface ParsedAssistantQuery {
   scope?: OptimizerScope
 }
 
-/** Demo schedule: tonight Blues home → game-1; tonight Cardinals home → game-2 */
-const DEMO_GAME_BLUES = "game-1"
-const DEMO_GAME_CARDINALS = "game-2"
-
 function normalize(input: string): string {
   return input
     .trim()
     .toLowerCase()
     .replace(/\u2019/g, "'")
     .replace(/\u2018/g, "'")
-}
-
-function hasWordBlues(n: string): boolean {
-  return /\bblues\b/.test(n)
-}
-
-function hasWordCardinals(n: string): boolean {
-  return /\bcardinals\b/.test(n) || /\bcardinal\b/.test(n)
 }
 
 function inferScope(n: string): OptimizerScope {
@@ -44,15 +37,6 @@ function inferScope(n: string): OptimizerScope {
   if (blues) return "blues"
   if (cards) return "cardinals"
   return "both"
-}
-
-/** Watch intent: game id for demo Blues/Cardinals tonight’s games. */
-function inferWatchGameId(n: string): string | undefined {
-  const blues = hasWordBlues(n)
-  const cards = hasWordCardinals(n)
-  if (cards && !blues) return DEMO_GAME_CARDINALS
-  if (blues) return DEMO_GAME_BLUES
-  return undefined
 }
 
 function isMissingIntent(n: string): boolean {
@@ -78,11 +62,12 @@ function isWatchIntent(n: string): boolean {
 
 /**
  * Map free-form text to a structured intent for `assistant-engine` callers.
- * `userState` is reserved for future context (e.g. locale, defaults); routing is keyword-only today.
+ * Watch questions resolve `gameId` from the live engine schedule (tonight first, then next upcoming).
  */
 export function parseAssistantQuery(
   input: string,
-  _userState: DemoUserState
+  _userState: DemoUserState,
+  now: Date = new Date()
 ): ParsedAssistantQuery {
   const n = normalize(input)
 
@@ -101,7 +86,7 @@ export function parseAssistantQuery(
   if (isWatchIntent(n)) {
     return {
       intent: "watch-question",
-      gameId: inferWatchGameId(n),
+      gameId: resolveEngineGameIdForWatchQuery(n, now),
     }
   }
 

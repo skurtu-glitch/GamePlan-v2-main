@@ -179,6 +179,11 @@ export function getUpgradeImpact(upgradeId: string): UpgradeImpact | undefined {
   return buildUpgradeImpact(def)
 }
 
+/** Upgrade Impact page id whose destination catalog plan matches `toPlanId` (e.g. `both-value` → `both-cheap-to-value`). */
+export function getUpgradeImpactIdForDestinationPlan(toPlanId: string): string | undefined {
+  return UPGRADE_DEFS.find((u) => u.toPlanId === toPlanId)?.id
+}
+
 export function getUpgradesFromPlan(planId: string): UpgradeImpact[] {
   return UPGRADE_DEFS.filter((u) => u.fromPlanId === planId).map(buildUpgradeImpact)
 }

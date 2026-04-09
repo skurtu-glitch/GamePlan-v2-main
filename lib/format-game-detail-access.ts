@@ -14,6 +14,11 @@ export interface FormattedBestOption {
   type: "watch" | "listen"
   provider: string
   explanation: string
+  /**
+   * First entitled video service id in `game.watch.providers` order when watchable.
+   * Omitted when the game has no id list but video still resolves (rare); use demo stub path.
+   */
+  primaryWatchServiceId?: string
 }
 
 export interface FormattedGameDetailAccess {
@@ -73,6 +78,7 @@ function buildWatchOptions(
     const priceUsd = demoMonthlyPriceUsd(id)
     return {
       provider: serviceDisplayName(id),
+      serviceId: id,
       available: connected,
       reason: connected
         ? "Included with your connected services"
@@ -144,15 +150,20 @@ function buildWatchVerdict(
 
 function buildBestOption(
   game: Game,
-  resolved: ResolvedGameAccess
+  resolved: ResolvedGameAccess,
+  userState: DemoUserState
 ): FormattedBestOption {
   if (resolved.status === "watchable") {
     const fromAction = stripWatchPrefix(resolved.primaryAction.label)
     const provider = fromAction || game.watch.provider || joinLabels(videoIds(game)) || "your app"
+    const ids = videoIds(game)
+    const met = ids.filter((id) => userEntitledToService(userState, id))
+    const primaryWatchServiceId = met[0]
     return {
       type: "watch",
       provider,
       explanation: `${resolved.primaryAction.label}. Add or change services anytime from Connected Services.`,
+      ...(primaryWatchServiceId ? { primaryWatchServiceId } : {}),
     }
   }
 
@@ -213,7 +224,7 @@ export function formatGameDetailAccess(
   userState: DemoUserState
 ): FormattedGameDetailAccess {
   return {
-    bestOption: buildBestOption(game, resolved),
+    bestOption: buildBestOption(game, resolved, userState),
     watchVerdict: buildWatchVerdict(game, resolved, userState),
     watchOptions: buildWatchOptions(game, userState, resolved),
     whyThisAnswer: buildWhyThisAnswer(game, resolved, userState),

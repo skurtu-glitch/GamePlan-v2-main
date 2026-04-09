@@ -299,13 +299,13 @@ export function GameCard({ game, variant = "default" }: GameCardProps) {
             </div>
           </div>
 
-          {/* Best Option */}
+          {/* Best Value */}
           <div className="border-t border-border/30 bg-accent/5 px-4 py-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Sparkles className="size-4 text-accent" />
                 <span className="text-sm font-medium text-foreground">
-                  Best option tonight:
+                  Best value tonight:
                 </span>
                 <span className="text-sm font-semibold text-accent">
                   {game.access.bestOption.label}

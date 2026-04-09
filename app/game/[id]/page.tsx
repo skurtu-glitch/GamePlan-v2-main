@@ -35,6 +35,12 @@ import {
   trackEvent,
   trackListenOutbound,
 } from "@/lib/analytics"
+import { watchOpenButtonLabel, watchStubPath } from "@/lib/watch-open"
+import { listenOpenButtonLabel, listenStubPath } from "@/lib/listen-open"
+import {
+  optimizerScopeForGame,
+  resolveGameDetailUpgradeImpactId,
+} from "@/lib/game-detail-upgrade"
 
 function formatGameTime(dateTime: string) {
   const d = new Date(dateTime)
@@ -131,6 +137,30 @@ function WatchOptionRow({
           <p className="mt-1 text-sm text-muted-foreground">{option.price}</p>
         )}
       </div>
+      {option.available && (
+        <Button
+          size="sm"
+          className="shrink-0 bg-status-available text-white hover:bg-status-available/90"
+          asChild
+        >
+          <Link
+            href={watchStubPath(option.serviceId, gameId)}
+            onClick={() =>
+              trackEvent(AnalyticsEvent.watchActionClick, {
+                ...analyticsBase("game_detail", userState, {
+                  href: watchStubPath(option.serviceId, gameId),
+                  label: "watch_section_open_row",
+                  game_id: gameId,
+                  ...(option.serviceId ? { plan_id: option.serviceId } : {}),
+                }),
+              })
+            }
+          >
+            <ExternalLink className="mr-1 size-3" />
+            Open
+          </Link>
+        </Button>
+      )}
       {!option.available && !option.hasSubscription && option.price && (
         <Button variant="outline" size="sm" className="shrink-0" asChild>
           <Link
@@ -227,6 +257,9 @@ export default function GameDetailPage({
   const [showWhyPanel, setShowWhyPanel] = useState(false)
 
   const game = getGameDetail(id)
+  const upgradeScope = game ? optimizerScopeForGame(game) : "both"
+  const upgradeImpactId = resolveGameDetailUpgradeImpactId(upgradeScope, state)
+  const upgradeHref = upgradeImpactId ? `/plans/upgrade/${upgradeImpactId}` : null
   const access = game ? resolveGameAccess(game, state) : null
   const accessUi =
     game && access ? formatGameDetailAccess(game, access, state) : null
@@ -315,7 +348,7 @@ export default function GameDetailPage({
           )}
         </Card>
 
-        {/* Best Option Section */}
+        {/* Best Value (primary path for this game) */}
         {accessUi && (
         <section className="mb-6">
           <Card
@@ -337,7 +370,7 @@ export default function GameDetailPage({
                   )}
                 />
                 <span className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-                  Best Option
+                  Best Value
                 </span>
               </div>
               <h2
@@ -374,27 +407,54 @@ export default function GameDetailPage({
                       </a>
                     </Button>
                   ) : (
-                    <Button className="bg-accent text-accent-foreground hover:bg-accent/90">
-                      <Play className="mr-2 size-4" />
-                      Open Audio
+                    <Button
+                      className="bg-accent text-accent-foreground hover:bg-accent/90"
+                      asChild
+                    >
+                      <Link
+                        href={listenStubPath(id)}
+                        onClick={() =>
+                          trackEvent(AnalyticsEvent.listenActionClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: listenStubPath(id),
+                              label: "open_audio_best_value_stub",
+                              game_id: id,
+                            }),
+                          })
+                        }
+                      >
+                        <Play className="mr-2 size-4" />
+                        {listenOpenButtonLabel()}
+                      </Link>
                     </Button>
                   ))}
                 {accessUi.bestOption.type === "watch" && (
                   <Button
                     className="bg-status-available text-white hover:bg-status-available/90"
-                    type="button"
-                    onClick={() =>
-                      trackEvent(AnalyticsEvent.watchActionClick, {
-                        ...analyticsBase("game_detail", state, {
-                          game_id: id,
-                          label: "open_watch_best_option",
-                          provider_hint: accessUi.bestOption.provider.split(" ")[0],
-                        }),
-                      })
-                    }
+                    asChild
                   >
-                    <ExternalLink className="mr-2 size-4" />
-                    Open {accessUi.bestOption.provider.split(" ")[0]}
+                    <Link
+                      href={watchStubPath(accessUi.bestOption.primaryWatchServiceId, id)}
+                      onClick={() =>
+                        trackEvent(AnalyticsEvent.watchActionClick, {
+                          ...analyticsBase("game_detail", state, {
+                            href: watchStubPath(
+                              accessUi.bestOption.primaryWatchServiceId,
+                              id
+                            ),
+                            game_id: id,
+                            label: "open_watch_best_option",
+                            provider_hint: accessUi.bestOption.provider.split(" ")[0],
+                            ...(accessUi.bestOption.primaryWatchServiceId
+                              ? { plan_id: accessUi.bestOption.primaryWatchServiceId }
+                              : {}),
+                          }),
+                        })
+                      }
+                    >
+                      <ExternalLink className="mr-2 size-4" />
+                      {watchOpenButtonLabel(accessUi.bestOption.primaryWatchServiceId)}
+                    </Link>
                   </Button>
                 )}
                 <Link
@@ -403,7 +463,7 @@ export default function GameDetailPage({
                     trackEvent(AnalyticsEvent.comparePlansClick, {
                       ...analyticsBase("game_detail", state, {
                         href: "/plans",
-                        label: "view_plans_best_option",
+                        label: "view_plans_best_value",
                         game_id: id,
                       }),
                     })
@@ -419,22 +479,40 @@ export default function GameDetailPage({
                     <span className="font-medium text-foreground">Also try: </span>
                     {access.fixRecommendation}
                     {" · "}
-                    <Link
-                      href="/plans/upgrade/both-cheap-to-value"
-                      className="font-medium text-accent underline-offset-2 hover:underline"
-                      onClick={() =>
-                        trackEvent(AnalyticsEvent.upgradeClick, {
-                          ...analyticsBase("game_detail", state, {
-                            href: "/plans/upgrade/both-cheap-to-value",
-                            label: "upgrade_best_value_inline",
-                            game_id: id,
-                          }),
-                          upgrade_id: "both-cheap-to-value",
-                        })
-                      }
-                    >
-                      Upgrade to Best Value
-                    </Link>
+                    {upgradeHref ? (
+                      <Link
+                        href={upgradeHref}
+                        className="font-medium text-accent underline-offset-2 hover:underline"
+                        onClick={() =>
+                          trackEvent(AnalyticsEvent.upgradeClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: upgradeHref,
+                              label: "upgrade_best_value_inline",
+                              game_id: id,
+                            }),
+                            ...(upgradeImpactId ? { upgrade_id: upgradeImpactId } : {}),
+                          })
+                        }
+                      >
+                        Upgrade to Best Value
+                      </Link>
+                    ) : (
+                      <Link
+                        href="/plans"
+                        className="font-medium text-accent underline-offset-2 hover:underline"
+                        onClick={() =>
+                          trackEvent(AnalyticsEvent.comparePlansClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: "/plans",
+                              label: "upgrade_best_value_plans_fallback",
+                              game_id: id,
+                            }),
+                          })
+                        }
+                      >
+                        See Best Value in Plans
+                      </Link>
+                    )}
                   </p>
                 )}
               </div>
@@ -535,24 +613,28 @@ export default function GameDetailPage({
                         Compare plans
                       </Link>
                     </Button>
-                    <Button size="sm" className="gap-1" asChild>
-                      <Link
-                        href="/plans/upgrade/both-cheap-to-value"
-                        onClick={() =>
-                          trackEvent(AnalyticsEvent.upgradeClick, {
-                            ...analyticsBase("game_detail", state, {
-                              href: "/plans/upgrade/both-cheap-to-value",
-                              label: "watch_section_upgrade",
-                              game_id: id,
-                            }),
-                            upgrade_id: "both-cheap-to-value",
-                          })
-                        }
-                      >
-                        <Zap className="size-3.5" />
-                        Upgrade to Best Value
-                      </Link>
-                    </Button>
+                    {upgradeHref ? (
+                      <Button size="sm" className="gap-1" asChild>
+                        <Link
+                          href={upgradeHref}
+                          onClick={() =>
+                            trackEvent(AnalyticsEvent.upgradeClick, {
+                              ...analyticsBase("game_detail", state, {
+                                href: upgradeHref,
+                                label: "watch_section_upgrade",
+                                game_id: id,
+                              }),
+                              ...(upgradeImpactId
+                                ? { upgrade_id: upgradeImpactId }
+                                : {}),
+                            })
+                          }
+                        >
+                          <Zap className="size-3.5" />
+                          Upgrade to Best Value
+                        </Link>
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               )}

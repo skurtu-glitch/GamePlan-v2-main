@@ -12,7 +12,6 @@ export interface OptimizerPlan {
   gamesListenOnly: number
   totalGames: number
   coveragePercent: number
-  isBestValue?: boolean
   tier: OptimizerTier
   scope: OptimizerScope
   explanation: string
@@ -69,7 +68,6 @@ export const ALL_OPTIMIZER_PLANS: OptimizerPlan[] = [
     gamesListenOnly: BLUES_VALUE_LISTEN,
     totalGames: NHL_REGULAR_SEASON_GAMES,
     coveragePercent: p(74, NHL_REGULAR_SEASON_GAMES),
-    isBestValue: true,
     explanation:
       "Watch 90% of games including local broadcasts — the sweet spot for most fans",
   },
@@ -124,7 +122,6 @@ export const ALL_OPTIMIZER_PLANS: OptimizerPlan[] = [
     gamesListenOnly: CARDS_VALUE_LISTEN,
     totalGames: MLB_REGULAR_SEASON_GAMES,
     coveragePercent: p(146, MLB_REGULAR_SEASON_GAMES),
-    isBestValue: true,
     explanation: "Watch 90% of games with local RSN — ideal for local fans",
   },
   {
@@ -178,7 +175,6 @@ export const ALL_OPTIMIZER_PLANS: OptimizerPlan[] = [
     gamesListenOnly: BOTH_VALUE_LISTEN,
     totalGames: SEASON_TOTAL_BOTH,
     coveragePercent: p(220, SEASON_TOTAL_BOTH),
-    isBestValue: true,
     explanation: "Watch 90% of both teams — the best balance of coverage and cost",
   },
   {

@@ -9,6 +9,13 @@ export interface DemoLocation {
   state: string
   /** Broadcast / market label for demo scenarios */
   marketLabel?: string
+  /** Optional ZIP (used for coarse home-market inference when `regionCode` is unset). */
+  zipCode?: string
+  /**
+   * Explicit home market for blackout rules: `stl` | `den` | `chi` (see `lib/market-regions.ts`).
+   * When set, overrides ZIP/city inference.
+   */
+  regionCode?: string
 }
 
 export interface DemoUserPreferences {
@@ -94,6 +101,7 @@ export function defaultDemoUserCore(): Omit<DemoUserState, "subscriptions" | "co
     location: {
       city: "St. Louis",
       state: "MO",
+      zipCode: "63101",
       marketLabel: "St. Louis market (Blues / Cardinals)",
     },
     preferences: {
@@ -144,6 +152,9 @@ export function mergeDemoUserState(parsed: unknown): DemoUserState {
       state: typeof loc.state === "string" ? loc.state : base.location.state,
       marketLabel:
         typeof loc.marketLabel === "string" ? loc.marketLabel : base.location.marketLabel,
+      zipCode: typeof loc.zipCode === "string" ? loc.zipCode : base.location.zipCode,
+      regionCode:
+        typeof loc.regionCode === "string" ? loc.regionCode : base.location.regionCode,
     },
     preferences: {
       displayName:

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, use, useMemo } from "react"
+import { useState, use, useMemo, useEffect, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
@@ -28,12 +28,30 @@ import { serviceDisplayName } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
-import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import { classifyRecommendedPlans, getCurrentCoverageBaseline } from "@/lib/optimizer-engine"
+import { getEngineGames, userTeams } from "@/lib/data"
+import {
+  getAffiliateLink,
+  hasAffiliateLanding,
+  primaryAffiliateServiceIdForPlan,
+} from "@/lib/affiliate"
 import {
   AnalyticsEvent,
   analyticsBase,
+  trackAffiliateClick,
   trackEvent,
 } from "@/lib/analytics"
+import {
+  chooseMonetizedPrimaryLabel,
+  formatBundlePlusList,
+  isGameWithinHours,
+  labelSeeAllPlans,
+  socialProofMostFans,
+  socialProofRecommended,
+  URGENCY_HOURS,
+  valueJustificationBestValue,
+  valueJustificationCheapest,
+} from "@/lib/conversion-copy"
 
 type FilterType = "all" | "watchable" | "listen-only" | "unavailable"
 
@@ -83,6 +101,215 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     () => classifyRecommendedPlans(team, state),
     [team, state]
   )
+
+  const currentBaseline = useMemo(
+    () => getCurrentCoverageBaseline(team, state),
+    [team, state]
+  )
+
+  const monetizedPrimaryWithin24h = useMemo(() => {
+    const t = new Date()
+    const games = getEngineGames().filter((game) =>
+      userTeams.some(
+        (tm) => tm.id === game.homeTeam.id || tm.id === game.awayTeam.id
+      )
+    )
+    return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, t))
+  }, [])
+
+  const unlockDelta = useMemo(() => {
+    if (!plan) return 0
+    return plan.gamesWatchable - currentBaseline.gamesWatchable
+  }, [plan, currentBaseline])
+
+  const leadServiceId = useMemo(() => {
+    if (!plan || plan.tier === "radio") return undefined
+    return primaryAffiliateServiceIdForPlan(plan)
+  }, [plan])
+
+  const stickyAffiliateHref = useMemo(() => {
+    if (!plan || !leadServiceId || !hasAffiliateLanding(leadServiceId)) return null
+    return getAffiliateLink(leadServiceId, {
+      sourceScreen: "plan_detail",
+      intent: "plan_detail_sticky",
+      planId: plan.id,
+    })
+  }, [plan, leadServiceId])
+
+  const stickyHref =
+    stickyAffiliateHref ?? (plan ? `/plans/${planId}` : "/plans")
+
+  const primaryCtaLabel = useMemo(
+    () =>
+      plan
+        ? chooseMonetizedPrimaryLabel({
+            within24h: monetizedPrimaryWithin24h,
+            planName: plan.name,
+          })
+        : "",
+    [plan, monetizedPrimaryWithin24h]
+  )
+
+  const planValueLine = useMemo(() => {
+    if (!plan) return ""
+    return plan.tier === "cheapest"
+      ? valueJustificationCheapest()
+      : valueJustificationBestValue()
+  }, [plan])
+
+  const planSocialLine = useMemo(() => {
+    if (!plan) return ""
+    return plan.tier === "value" || plan.name === "Best Value"
+      ? socialProofMostFans()
+      : socialProofRecommended()
+  }, [plan])
+
+  const isRadioOnlyPre = plan?.tier === "radio"
+  const isLogicBestValuePre =
+    Boolean(
+      plan &&
+        planRecs.bestValuePlanId !== null &&
+        planRecs.bestValuePlanId === planId
+    )
+  const isFullPre = plan?.tier === "full"
+
+  const decisionHeadline = useMemo(() => {
+    if (!plan) return ""
+    if (isRadioOnlyPre) return `Follow every game live with ${plan.name}`
+    if (isLogicBestValuePre) {
+      return `Get ${plan.name} to unlock more of your games this season`
+    }
+    if (unlockDelta > 0) {
+      return `Get ${plan.name} to unlock ${unlockDelta} more games this season`
+    }
+    return `Choose ${plan.name} for stronger season coverage`
+  }, [plan, isRadioOnlyPre, isLogicBestValuePre, unlockDelta])
+
+  const whyBullets = useMemo(() => {
+    if (!plan) return [] as string[]
+    const bullets: string[] = []
+    if (isRadioOnlyPre) {
+      bullets.push(
+        "Live audio for your teams all season—next to your full watch schedule."
+      )
+      return bullets.slice(0, 2)
+    }
+    if (unlockDelta > 0) {
+      bullets.push(
+        `Unlocks ${unlockDelta} more watchable games this season vs your current setup.`
+      )
+    } else {
+      bullets.push(
+        `${plan.coveragePercent}% watchable this season (${plan.gamesWatchable} of ${plan.totalGames} games on the catalog).`
+      )
+    }
+    const canAvoidFull =
+      !isFullPre &&
+      planRecs.fullCoveragePlanId != null &&
+      planRecs.fullCoveragePlanId !== planId &&
+      plan.coveragePercent >= 65
+    if (bullets.length < 2 && canAvoidFull) {
+      bullets.push(
+        "Avoid paying for full coverage—strong season reach without the full bundle."
+      )
+    } else if (
+      bullets.length < 2 &&
+      unlockDelta > 0 &&
+      currentBaseline.coveragePercent !== plan.coveragePercent
+    ) {
+      bullets.push(
+        `${currentBaseline.coveragePercent}% → ${plan.coveragePercent}% watchable coverage this season.`
+      )
+    } else if (bullets.length < 2) {
+      bullets.push(
+        "No need for the full bundle unless you want every edge case covered."
+      )
+    }
+    return bullets.slice(0, 2)
+  }, [
+    plan,
+    isRadioOnlyPre,
+    isFullPre,
+    unlockDelta,
+    planRecs.fullCoveragePlanId,
+    planId,
+    currentBaseline.coveragePercent,
+  ])
+
+  useEffect(() => {
+    if (!plan) return
+    trackEvent(AnalyticsEvent.decisionShown, {
+      ...analyticsBase("plan_detail", state, {
+        surface: "plan_detail_conversion",
+        plan_id: planId,
+        scope: team,
+      }),
+      recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+    })
+  }, [plan, planId, team, state, planRecs.bestValuePlanId])
+
+  const onPlanDetailPrimaryClick = useCallback(() => {
+    if (!plan) return
+    if (stickyAffiliateHref && leadServiceId) {
+      trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+        ...analyticsBase("plan_detail", state, {
+          label: primaryCtaLabel,
+          plan_id: planId,
+          scope: team,
+          service_id: leadServiceId,
+          intent: "plan_detail_primary",
+          href: stickyHref,
+        }),
+        recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+      })
+      trackAffiliateClick(stickyAffiliateHref, "plan_detail", state, {
+        label: "plan_detail_primary",
+        plan_id: planId,
+        service_id: leadServiceId,
+        intent: "plan_detail_primary",
+        scope: team,
+        recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+      })
+      trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
+        ...analyticsBase("plan_detail", state, {
+          label: primaryCtaLabel,
+          plan_id: planId,
+          scope: team,
+          href: stickyHref,
+        }),
+        recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+      })
+      return
+    }
+    trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+      ...analyticsBase("plan_detail", state, {
+        label: primaryCtaLabel,
+        plan_id: planId,
+        scope: team,
+        href: stickyHref,
+      }),
+      recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+    })
+    trackEvent(AnalyticsEvent.comparePlansClick, {
+      ...analyticsBase("plan_detail", state, {
+        label: primaryCtaLabel,
+        plan_id: planId,
+        scope: team,
+        href: stickyHref,
+      }),
+      recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+    })
+  }, [
+    plan,
+    stickyAffiliateHref,
+    leadServiceId,
+    state,
+    primaryCtaLabel,
+    planId,
+    team,
+    stickyHref,
+    planRecs.bestValuePlanId,
+  ])
   
   if (!plan) {
     return (
@@ -154,6 +381,86 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-lg px-5 py-6">
+        <Card
+          className={cn(
+            "mb-6 overflow-hidden border-border p-0",
+            isLogicBestValue && "border-accent/40 ring-1 ring-accent/15"
+          )}
+        >
+          <div className="border-b border-border/40 bg-secondary/15 px-4 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Decision
+            </p>
+          </div>
+          <div className="space-y-4 p-5">
+            <p className="text-sm font-semibold leading-snug text-foreground">
+              {decisionHeadline}
+            </p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Why
+              </p>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-muted-foreground">
+                {whyBullets.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Next
+              </p>
+              <p className="mt-2 text-[11px] font-medium leading-snug text-foreground/90">
+                <span className="text-muted-foreground">Includes: </span>
+                {formatBundlePlusList(plan.servicesIncluded)}
+              </p>
+              {!isRadioOnly && (
+                <>
+                  <Button className="mt-3 w-full gap-2 font-semibold" size="lg" asChild>
+                    <a
+                      href={stickyHref}
+                      target={stickyAffiliateHref ? "_blank" : undefined}
+                      rel={stickyAffiliateHref ? "noopener noreferrer" : undefined}
+                      onClick={onPlanDetailPrimaryClick}
+                    >
+                      {primaryCtaLabel}
+                      <ChevronRight className="size-4" />
+                    </a>
+                  </Button>
+                  <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+                    {planValueLine}
+                  </p>
+                  <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">
+                    {planSocialLine}
+                  </p>
+                </>
+              )}
+              <Link
+                href="/plans"
+                className="mt-2 block"
+                onClick={() =>
+                  trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                    ...analyticsBase("plan_detail", state, {
+                      href: "/plans",
+                      label: labelSeeAllPlans(),
+                      plan_id: planId,
+                      scope: team,
+                    }),
+                    recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+                  })
+                }
+              >
+                <Button
+                  variant="ghost"
+                  className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground"
+                >
+                  {labelSeeAllPlans()}
+                  <ChevronRight className="size-3.5 opacity-70" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
         
         {/* Coverage Hero */}
         <Card className="mb-6 overflow-hidden border-border p-0">
@@ -461,78 +768,67 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
         )}
       </main>
 
-      {/* Sticky CTA */}
-      {!isRadioOnly && availableUpgrades.length > 0 && (
-        <div className="fixed bottom-20 left-0 right-0 z-10 border-t border-border bg-background/95 px-5 py-4 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-lg gap-3">
-            <Button
-              className="flex-1 gap-2"
-              size="lg"
-              type="button"
-              onClick={() =>
-                trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
-                  ...analyticsBase("plan_detail", state, {
-                    label: "get_this_plan_sticky",
-                    scope: team,
-                    plan_id: planId,
-                  }),
-                  recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
-                })
-              }
-            >
-              Get This Plan
-              <ChevronRight className="size-4" />
+      {/* Sticky CTA — single dominant primary; explore via body upgrade cards + Plans list */}
+      <div className="fixed bottom-20 left-0 right-0 z-10 border-t border-border bg-background/95 px-5 py-4 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-lg flex-col gap-2">
+          {!isRadioOnly ? (
+            <Button className="w-full gap-2 font-semibold" size="lg" asChild>
+              <a
+                href={stickyHref}
+                target={stickyAffiliateHref ? "_blank" : undefined}
+                rel={stickyAffiliateHref ? "noopener noreferrer" : undefined}
+                onClick={onPlanDetailPrimaryClick}
+              >
+                {primaryCtaLabel}
+                <ChevronRight className="size-4" />
+              </a>
             </Button>
-            <Link
-              href={`/plans/upgrade/${availableUpgrades[0].id}`}
-              className="shrink-0"
-              onClick={() =>
-                trackEvent(AnalyticsEvent.upgradeClick, {
-                  ...analyticsBase("plan_detail", state, {
-                    href: `/plans/upgrade/${availableUpgrades[0].id}`,
-                    label: "see_upgrade_sticky",
-                    scope: team,
-                    plan_id: planId,
-                  }),
-                  upgrade_id: availableUpgrades[0].id,
-                  recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
-                })
-              }
-            >
-              <Button variant="outline" size="lg" className="gap-2">
-                <Zap className="size-4" />
-                See Upgrade
-              </Button>
-            </Link>
-          </div>
-        </div>
-      )}
-
-      {/* Simple CTA for full plans or radio */}
-      {(isRadioOnly || availableUpgrades.length === 0) && (
-        <div className="fixed bottom-20 left-0 right-0 z-10 border-t border-border bg-background/95 px-5 py-4 backdrop-blur-sm">
-          <div className="mx-auto max-w-lg">
-            <Button
-              className="w-full gap-2"
-              size="lg"
-              type="button"
-              onClick={() =>
-                trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
-                  ...analyticsBase("plan_detail", state, {
-                    label: isRadioOnly ? "use_free_radio_sticky" : "get_this_plan_full_radio_sticky",
-                    scope: team,
-                    plan_id: planId,
-                  }),
-                  recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
-                })
-              }
-            >
-              {isRadioOnly ? "Use Free Radio" : "Get This Plan"}
-              <ChevronRight className="size-4" />
+          ) : (
+            <Button className="w-full gap-2 font-semibold" size="lg" asChild>
+              <Link
+                href="/listen/stub"
+                onClick={() =>
+                  trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                    ...analyticsBase("plan_detail", state, {
+                      href: "/listen/stub",
+                      label: "use_free_radio_sticky",
+                      scope: team,
+                      plan_id: planId,
+                    }),
+                    recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+                  })
+                }
+              >
+                Use free radio
+                <ChevronRight className="size-4" />
+              </Link>
             </Button>
-          </div>
+          )}
+          <Link
+            href="/plans"
+            className="block"
+            onClick={() =>
+              trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                ...analyticsBase("plan_detail", state, {
+                  href: "/plans",
+                  label: labelSeeAllPlans(),
+                  scope: team,
+                  plan_id: planId,
+                }),
+                recommended_plan_id: planRecs.bestValuePlanId ?? undefined,
+              })
+            }
+          >
+            <Button
+              variant="ghost"
+              className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground"
+            >
+              {labelSeeAllPlans()}
+              <ChevronRight className="size-3.5 opacity-70" />
+            </Button>
+          </Link>
         </div>
-      )}
+      </div>
 
       <BottomNav />
     </div>

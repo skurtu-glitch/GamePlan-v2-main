@@ -1,6 +1,6 @@
 "use client"
 
-import { use } from "react"
+import { use, useEffect, useMemo, useCallback } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
@@ -38,6 +38,18 @@ import {
   trackEvent,
 } from "@/lib/analytics"
 import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import { getEngineGames, userTeams } from "@/lib/data"
+import {
+  chooseMonetizedPrimaryLabel,
+  formatBundlePlusList,
+  isGameWithinHours,
+  labelReviewDetails,
+  socialProofMostFans,
+  socialProofRecommended,
+  URGENCY_HOURS,
+  valueJustificationBestValue,
+  valueJustificationCheapest,
+} from "@/lib/conversion-copy"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
 import { cn } from "@/lib/utils"
 
@@ -53,8 +65,192 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
   const { state } = useDemoUser()
 
   const upgrade = getUpgradeImpact(upgradeId)
-  
-  if (!upgrade) {
+
+  const stats = useMemo(
+    () => (upgrade ? getUpgradeImpactStats(upgrade) : null),
+    [upgrade]
+  )
+
+  const fromPlan = useMemo(
+    () => (upgrade ? getOptimizerPlanById(upgrade.fromPlanId) : null),
+    [upgrade]
+  )
+  const toPlan = useMemo(
+    () => (upgrade ? getOptimizerPlanById(upgrade.toPlanId) : null),
+    [upgrade]
+  )
+
+  const scope: OptimizerScope = upgrade
+    ? scopeFromPlanId(upgrade.toPlanId)
+    : "both"
+
+  const recs = useMemo(
+    () => classifyRecommendedPlans(scope, state),
+    [scope, state]
+  )
+
+  const monetizedPrimaryWithin24h = useMemo(() => {
+    const t = new Date()
+    const games = getEngineGames().filter((game) =>
+      userTeams.some(
+        (tm) => tm.id === game.homeTeam.id || tm.id === game.awayTeam.id
+      )
+    )
+    return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, t))
+  }, [])
+
+  const primaryCtaLabel = useMemo(
+    () =>
+      toPlan
+        ? chooseMonetizedPrimaryLabel({
+            within24h: monetizedPrimaryWithin24h,
+            planName: toPlan.name,
+          })
+        : "Unlock more games",
+    [toPlan, monetizedPrimaryWithin24h]
+  )
+
+  const upgradeDecisionHeadline = useMemo(() => {
+    if (!upgrade || !stats || !toPlan) return ""
+    return `Get ${upgrade.toPlanName} to unlock ${stats.newlyWatchable} more games this season`
+  }, [upgrade, stats, toPlan])
+
+  const upgradeWhyBullets = useMemo(() => {
+    if (!upgrade || !stats || !toPlan) return [] as string[]
+    const bullets: string[] = [
+      `${stats.catalogCurrentPercent}% → ${stats.catalogUpgradedPercent}% watchable coverage on the season catalog.`,
+    ]
+    if (
+      toPlan.tier !== "full" &&
+      recs.fullCoveragePlanId != null &&
+      recs.fullCoveragePlanId !== upgrade.toPlanId
+    ) {
+      bullets.push(
+        "Avoid paying for full coverage—this upgrade lands most of the season."
+      )
+    } else {
+      bullets.push(
+        `Unlocks ${stats.newlyWatchable} more watchable games this season for +$${stats.costDelta.toFixed(2)}/mo list.`
+      )
+    }
+    return bullets.slice(0, 2)
+  }, [upgrade, stats, toPlan, recs.fullCoveragePlanId])
+
+  const planValueLine = useMemo(() => {
+    if (!toPlan) return ""
+    return toPlan.tier === "cheapest"
+      ? valueJustificationCheapest()
+      : valueJustificationBestValue()
+  }, [toPlan])
+
+  const planSocialLine = useMemo(() => {
+    if (!toPlan) return ""
+    return toPlan.tier === "value" || toPlan.name === "Best Value"
+      ? socialProofMostFans()
+      : socialProofRecommended()
+  }, [toPlan])
+
+  const fromBundlePromo = useMemo(
+    () => (fromPlan ? getPlanBundlePromoSummary(fromPlan) : null),
+    [fromPlan]
+  )
+  const upgradedBundlePromo = useMemo(
+    () => (toPlan ? getPlanBundlePromoSummary(toPlan) : null),
+    [toPlan]
+  )
+
+  const introUpgradeStepMo = useMemo(() => {
+    if (
+      !upgradedBundlePromo?.showPromoLine ||
+      upgradedBundlePromo.introEffectiveMonthlyUsd === undefined ||
+      !fromPlan
+    ) {
+      return null
+    }
+    return (
+      Math.round(
+        (upgradedBundlePromo.introEffectiveMonthlyUsd - fromPlan.monthlyCost) * 100
+      ) / 100
+    )
+  }, [upgradedBundlePromo, fromPlan])
+
+  const stickyLeadId =
+    toPlan && toPlan.tier !== "radio"
+      ? primaryAffiliateServiceIdForPlan(toPlan)
+      : undefined
+  const stickyAffiliateHref =
+    upgrade &&
+    stickyLeadId &&
+    hasAffiliateLanding(stickyLeadId)
+      ? getAffiliateLink(stickyLeadId, {
+          sourceScreen: "upgrade_impact",
+          intent: "upgrade_sticky_start",
+          planId: upgrade.toPlanId,
+        })
+      : null
+  const stickyHref =
+    upgrade && stickyAffiliateHref
+      ? stickyAffiliateHref
+      : upgrade
+        ? `/plans/${upgrade.toPlanId}`
+        : "/plans"
+  const stickyOffer = stickyLeadId ? getBestOffer(stickyLeadId) : null
+  const stickyPrice = stickyLeadId ? getEffectivePrice(stickyLeadId) : null
+
+  useEffect(() => {
+    if (!upgrade || !stats) return
+    trackEvent(AnalyticsEvent.decisionShown, {
+      ...analyticsBase("upgrade_impact", state, {
+        surface: "upgrade_impact_conversion",
+        upgrade_id: upgradeId,
+        plan_id: upgrade.toPlanId,
+        scope,
+      }),
+      recommended_plan_id: recs.bestValuePlanId ?? undefined,
+    })
+  }, [upgrade, stats, upgradeId, state, recs.bestValuePlanId, scope])
+
+  const onUpgradeStickyPrimaryClick = useCallback(() => {
+    if (!upgrade || !toPlan) return
+    if (stickyAffiliateHref && stickyLeadId) {
+      trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+        ...analyticsBase("upgrade_impact", state, {
+          label: primaryCtaLabel,
+          plan_id: upgrade.toPlanId,
+          service_id: stickyLeadId,
+          intent: "upgrade_sticky_start",
+          href: stickyHref,
+          scope,
+          upgrade_id: upgradeId,
+        }),
+        recommended_plan_id: recs.bestValuePlanId ?? undefined,
+      })
+      return
+    }
+    trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+      ...analyticsBase("upgrade_impact", state, {
+        label: primaryCtaLabel,
+        plan_id: upgrade.toPlanId,
+        href: stickyHref,
+        scope,
+        upgrade_id: upgradeId,
+      }),
+      recommended_plan_id: recs.bestValuePlanId ?? undefined,
+    })
+  }, [
+    upgrade,
+    toPlan,
+    stickyAffiliateHref,
+    stickyLeadId,
+    state,
+    primaryCtaLabel,
+    stickyHref,
+    scope,
+    upgradeId,
+    recs.bestValuePlanId,
+  ])
+
+  if (!upgrade || !stats) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="text-center">
@@ -67,39 +263,9 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
     )
   }
 
-  const stats = getUpgradeImpactStats(upgrade)
   const currentPercentage = stats.catalogCurrentPercent
   const upgradedPercentage = stats.catalogUpgradedPercent
   const catalogTotal = stats.catalogTotalGames
-
-  const fromPlan = getOptimizerPlanById(upgrade.fromPlanId)
-  const toPlan = getOptimizerPlanById(upgrade.toPlanId)
-  const scope = scopeFromPlanId(upgrade.toPlanId)
-  const recs = classifyRecommendedPlans(scope, state)
-  const fromBundlePromo = fromPlan ? getPlanBundlePromoSummary(fromPlan) : null
-  const upgradedBundlePromo = toPlan ? getPlanBundlePromoSummary(toPlan) : null
-  const introUpgradeStepMo =
-    upgradedBundlePromo?.showPromoLine &&
-    upgradedBundlePromo.introEffectiveMonthlyUsd !== undefined &&
-    fromPlan
-      ? Math.round((upgradedBundlePromo.introEffectiveMonthlyUsd - fromPlan.monthlyCost) * 100) / 100
-      : null
-
-  const stickyLeadId =
-    toPlan && toPlan.tier !== "radio"
-      ? primaryAffiliateServiceIdForPlan(toPlan)
-      : undefined
-  const stickyAffiliateHref =
-    stickyLeadId && hasAffiliateLanding(stickyLeadId)
-      ? getAffiliateLink(stickyLeadId, {
-          sourceScreen: "upgrade_impact",
-          intent: "upgrade_sticky_start",
-          planId: upgrade.toPlanId,
-        })
-      : null
-  const stickyHref = stickyAffiliateHref ?? `/plans/${upgrade.toPlanId}`
-  const stickyOffer = stickyLeadId ? getBestOffer(stickyLeadId) : null
-  const stickyPrice = stickyLeadId ? getEffectivePrice(stickyLeadId) : null
 
   return (
     <div className="flex min-h-screen flex-col bg-background pb-40">
@@ -126,6 +292,118 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
 
       {/* Main Content */}
       <main className="mx-auto w-full max-w-lg px-5 py-6">
+        <Card className="mb-6 overflow-hidden border-accent/30 bg-gradient-to-r from-accent/10 to-transparent p-0">
+          <div className="border-b border-border/40 bg-secondary/15 px-4 py-2">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+              Decision
+            </p>
+          </div>
+          <div className="space-y-4 p-5">
+            <p className="text-sm font-semibold leading-snug text-foreground">
+              {upgradeDecisionHeadline}
+            </p>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Why
+              </p>
+              <ul className="mt-2 list-disc space-y-1.5 pl-4 text-xs leading-relaxed text-muted-foreground">
+                {upgradeWhyBullets.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </div>
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Next
+              </p>
+              {toPlan && (
+                <p className="mt-2 text-[11px] font-medium leading-snug text-foreground/90">
+                  <span className="text-muted-foreground">Includes: </span>
+                  {formatBundlePlusList(toPlan.servicesIncluded)}
+                </p>
+              )}
+              {toPlan && toPlan.tier !== "radio" && (
+                <>
+                  <Button className="mt-3 w-full gap-2 font-semibold" size="lg" asChild>
+                    <a
+                      href={stickyHref}
+                      target={stickyAffiliateHref ? "_blank" : undefined}
+                      rel={stickyAffiliateHref ? "noopener noreferrer" : undefined}
+                      onClick={() => {
+                        onUpgradeStickyPrimaryClick()
+                        if (stickyAffiliateHref && stickyLeadId) {
+                          trackAffiliateClick(stickyAffiliateHref, "upgrade_impact", state, {
+                            label: "upgrade_inline_start",
+                            plan_id: upgrade.toPlanId,
+                            service_id: stickyLeadId,
+                            intent: "upgrade_inline_start",
+                            scope,
+                            upgrade_id: upgradeId,
+                            recommended_plan_id: recs.bestValuePlanId ?? undefined,
+                          })
+                          return
+                        }
+                        trackEvent(AnalyticsEvent.upgradeClick, {
+                          ...analyticsBase("upgrade_impact", state, {
+                            href: stickyHref,
+                            label: "upgrade_inline_cta",
+                            scope,
+                            plan_id: upgrade.toPlanId,
+                          }),
+                          upgrade_id: upgradeId,
+                          recommended_plan_id: recs.bestValuePlanId ?? undefined,
+                        })
+                      }}
+                    >
+                      {primaryCtaLabel}
+                      <ChevronRight className="size-4" />
+                    </a>
+                  </Button>
+                  <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+                    {planValueLine}
+                  </p>
+                  <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">
+                    {planSocialLine}
+                  </p>
+                </>
+              )}
+              <Link
+                href={`/plans/${upgrade.toPlanId}`}
+                className="mt-2 block"
+                onClick={() => {
+                  trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                    ...analyticsBase("upgrade_impact", state, {
+                      href: `/plans/${upgrade.toPlanId}`,
+                      label: labelReviewDetails(),
+                      scope,
+                      plan_id: upgrade.toPlanId,
+                    }),
+                    upgrade_id: upgradeId,
+                    recommended_plan_id: recs.bestValuePlanId ?? undefined,
+                  })
+                  trackEvent(AnalyticsEvent.comparePlansClick, {
+                    ...analyticsBase("upgrade_impact", state, {
+                      href: `/plans/${upgrade.toPlanId}`,
+                      label: "view_full_plan_details",
+                      scope,
+                      plan_id: upgrade.toPlanId,
+                    }),
+                    upgrade_id: upgradeId,
+                    recommended_plan_id: recs.bestValuePlanId ?? undefined,
+                  })
+                }}
+              >
+                <Button
+                  variant="ghost"
+                  className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground"
+                >
+                  {labelReviewDetails()}
+                  <ChevronRight className="size-3.5 opacity-70" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+        </Card>
         
         {/* Before vs After Comparison — catalog season totals (same basis as Plan Optimizer) */}
         <section className="mb-6">
@@ -347,29 +625,9 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
           </div>
         </section>
 
-        {/* Secondary CTA */}
-        <Link
-          href={`/plans/${upgrade.toPlanId}`}
-          onClick={() =>
-            trackEvent(AnalyticsEvent.comparePlansClick, {
-              ...analyticsBase("upgrade_impact", state, {
-                href: `/plans/${upgrade.toPlanId}`,
-                label: "view_full_plan_details",
-                scope,
-                plan_id: upgrade.toPlanId,
-              }),
-              upgrade_id: upgradeId,
-              recommended_plan_id: recs.bestValuePlanId ?? undefined,
-            })
-          }
-        >
-          <Button variant="outline" className="w-full gap-2">
-            View Full Plan Details
-            <ChevronRight className="size-4" />
-          </Button>
-        </Link>
-        <p className="mt-4 text-center text-xs text-muted-foreground">
-          Video not on your current plan? Add services first, then pick a bundle that includes them.
+        <p className="mt-2 text-center text-xs leading-relaxed text-muted-foreground">
+          Add the right services first, then lock in this bundle so tonight’s games and the rest of the
+          season line up.
         </p>
       </main>
 
@@ -405,6 +663,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
               rel={stickyAffiliateHref ? "noopener noreferrer" : undefined}
               className="flex w-full items-center justify-center gap-2"
               onClick={() => {
+                onUpgradeStickyPrimaryClick()
                 if (stickyAffiliateHref && stickyLeadId) {
                   trackAffiliateClick(stickyAffiliateHref, "upgrade_impact", state, {
                     label: "start_best_value_plan",
@@ -429,12 +688,15 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 })
               }}
             >
-              <Check className="size-5" />
-              Start {upgrade.toPlanName} plan
+              {primaryCtaLabel}
+              <ChevronRight className="size-4" />
             </a>
           </Button>
-          <p className="mt-2 text-center text-xs text-muted-foreground">
-            +${stats.costDelta.toFixed(2)}/mo list · +{stats.newlyWatchable} more watchable this season
+          <p className="mt-2 text-center text-[11px] leading-snug text-muted-foreground">
+            {planValueLine}
+          </p>
+          <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">
+            {planSocialLine}
           </p>
         </div>
       </div>

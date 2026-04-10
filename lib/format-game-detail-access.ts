@@ -1,4 +1,9 @@
-import { missingVideoProviders, userEntitledToService } from "@/lib/access-rules"
+import {
+  describeWatchProviderRow,
+  evaluateVideoAccess,
+  missingVideoProviders,
+  videoProviderIdsViableForLocation,
+} from "@/lib/access-rules"
 import { userTeams } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import type { Game, WatchOption } from "@/lib/types"
@@ -71,6 +76,8 @@ function buildWatchOptions(
   resolved: ResolvedGameAccess
 ): WatchOption[] {
   const ids = videoIds(game)
+  const videoEval = evaluateVideoAccess(game, userState)
+
   if (ids.length === 0) {
     const label = game.watch.provider ?? "Regional / national feed"
     const canWatch = resolved.status === "watchable"
@@ -79,7 +86,7 @@ function buildWatchOptions(
         provider: label,
         available: canWatch,
         reason: canWatch
-          ? "Included with your connected services"
+          ? "Included with your connected services — valid for this game in your area."
           : "Not available with your current plan — add in Connected Services",
         hasSubscription: canWatch,
       },
@@ -87,17 +94,18 @@ function buildWatchOptions(
   }
 
   return ids.map((id) => {
-    const connected = userEntitledToService(userState, id)
+    const row = describeWatchProviderRow(game, userState, id, videoEval)
     const priceUsd = demoMonthlyPriceUsd(id)
     return {
       provider: serviceDisplayName(id),
       serviceId: id,
-      available: connected,
-      reason: connected
-        ? "Included with your connected services"
-        : "Not available with your current plan — add in Connected Services",
-      hasSubscription: connected,
-      price: priceUsd !== undefined ? `$${priceUsd.toFixed(2)}/mo` : undefined,
+      available: row.canOpenWatch,
+      reason: row.reason,
+      hasSubscription: row.subscribed,
+      price:
+        !row.subscribed && priceUsd !== undefined
+          ? `$${priceUsd.toFixed(2)}/mo`
+          : undefined,
     }
   })
 }
@@ -131,11 +139,12 @@ function buildWatchVerdict(
 
   if (resolved.status === "listen-only") {
     const reasons: string[] = [
-      "Video is not available with your current plan for this matchup.",
+      resolved.reason ?? "Video is not available with your current plan for this matchup.",
       carrierLine,
       `You can follow live audio on ${listenProvider(game)}.`,
     ]
-    const missing = missingVideoProviders(userState, ids)
+    const viableIds = videoProviderIdsViableForLocation(game, userState)
+    const missing = missingVideoProviders(userState, viableIds)
     if (missing.length > 0) {
       reasons.push(
         `To watch, add one of: ${joinLabels(missing)} (see Connected Services or Plans).`
@@ -169,8 +178,8 @@ function buildBestOption(
   if (resolved.status === "watchable") {
     const fromAction = stripWatchPrefix(resolved.primaryAction.label)
     const provider = fromAction || game.watch.provider || joinLabels(videoIds(game)) || "your app"
-    const ids = videoIds(game)
-    const met = ids.filter((id) => userEntitledToService(userState, id))
+    const video = evaluateVideoAccess(game, userState)
+    const met = video.matchedServiceIds
     const primaryWatchServiceId = met[0]
     return {
       type: "watch",
@@ -214,7 +223,8 @@ function buildWhyThisAnswer(
   ]
 
   if (resolved.status === "watchable") {
-    const met = ids.filter((id) => userEntitledToService(userState, id))
+    const video = evaluateVideoAccess(game, userState)
+    const met = video.matchedServiceIds
     if (met.length > 0) {
       bullets.push(
         `Watch works because you have ${joinLabels(met)} connected for video.`
@@ -224,7 +234,8 @@ function buildWhyThisAnswer(
   } else {
     bullets.push(resolved.reason ?? "Video is not available with your current plan.")
     if (ids.length > 0) {
-      const missing = missingVideoProviders(userState, ids)
+      const viable = videoProviderIdsViableForLocation(game, userState)
+      const missing = missingVideoProviders(userState, viable)
       if (missing.length > 0) {
         bullets.push(
           `You're missing video entitlement for: ${joinLabels(missing)}.`

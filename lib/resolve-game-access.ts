@@ -52,6 +52,10 @@ export function resolveGameAccess(game: Game, userState: DemoUserState): Resolve
     }
   }
 
+  const videoContextReason =
+    video.marketRestrictionMessage ??
+    (gameVideoIds.length > 0 ? PLAN_COPY : undefined)
+
   if (audio.available) {
     const fixRecommendation =
       gameVideoIds.length > 0
@@ -65,7 +69,7 @@ export function resolveGameAccess(game: Game, userState: DemoUserState): Resolve
         label: `Listen on ${audio.providerLabel}`,
       },
       providers: [audio.providerLabel],
-      reason: PLAN_COPY,
+      reason: videoContextReason ?? PLAN_COPY,
       fixRecommendation,
     }
   }
@@ -77,7 +81,7 @@ export function resolveGameAccess(game: Game, userState: DemoUserState): Resolve
       label: "Fix access",
     },
     providers: [],
-    reason: PLAN_COPY,
+    reason: videoContextReason ?? PLAN_COPY,
     fixRecommendation:
       gameVideoIds.length > 0
         ? buildBestSingleFixRecommendation(game, userState)

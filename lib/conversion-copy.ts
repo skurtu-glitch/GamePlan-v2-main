@@ -4,6 +4,7 @@
  */
 
 import type { Game, Team } from "@/lib/types"
+import type { ResolvedGameAccess } from "@/lib/resolve-game-access"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 
 export const URGENCY_HOURS = 24
@@ -71,6 +72,10 @@ export function labelReviewDetails(): string {
   return "Review details"
 }
 
+export function labelSeeAllPlans(): string {
+  return "See all plans"
+}
+
 export function labelUnlockMoreGames(): string {
   return "Unlock more games"
 }
@@ -101,4 +106,19 @@ export function chooseMonetizedPrimaryLabel(opts: {
   if (opts.within24h) return labelWatchTonightsGame()
   if (opts.planName === "Best Value") return labelGetBestValuePlan()
   return labelUnlockMoreGames()
+}
+
+/**
+ * Home schedule rows: outcome labels without changing resolver destinations.
+ */
+export function homeGameRowPrimaryLabel(access: ResolvedGameAccess): string {
+  if (access.status === "watchable") {
+    const { label } = access.primaryAction
+    if (label.startsWith("Watch on ")) return label
+    return "Watch this game"
+  }
+  if (access.status === "listen-only") {
+    return access.primaryAction.label
+  }
+  return labelFixMyCoverage()
 }

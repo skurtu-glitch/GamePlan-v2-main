@@ -26,7 +26,16 @@ import {
   type PlanQuestionAnswer,
   type WatchQuestionAnswer,
 } from "@/lib/assistant-engine"
+import {
+  formatAssistantDecision,
+  formatAssistantNextAction,
+  formatAssistantWhy,
+} from "@/lib/assistant-format"
 import type { DemoUserState } from "@/lib/demo-user"
+import { userTeams } from "@/lib/data"
+import { getCurrentCoverageBaseline } from "@/lib/optimizer-engine"
+import type { OptimizerScope } from "@/lib/optimizer-plans"
+import { formatServiceIdList } from "@/lib/streaming-service-ids"
 import {
   AnalyticsEvent,
   analyticsBase,
@@ -37,13 +46,15 @@ import {
 const DEMO_SUGGESTED_PROMPTS = [
   { icon: Tv, text: "Can I watch tonight’s Blues game?" },
   { icon: Tv, text: "Why can’t I watch the Cardinals tonight?" },
-  { icon: TrendingUp, text: "What’s the cheapest way to follow both teams?" },
-  { icon: Calendar, text: "What games am I missing on video?" },
+  { icon: TrendingUp, text: "What’s the cheapest way to watch more games?" },
+  { icon: Calendar, text: "What am I missing on video?" },
 ] as const
 
 const ICON_BY_PROMPT_TEXT: Record<string, LucideIcon> = Object.fromEntries(
   DEMO_SUGGESTED_PROMPTS.map((p) => [p.text, p.icon])
 )
+
+type AssistantIntent = "watch" | "plan" | "missing" | "fallback"
 
 function normalizePromptKey(s: string): string {
   return s.trim().toLowerCase().replace(/\u2019/g, "'").replace(/\u2018/g, "'")
@@ -69,17 +80,54 @@ function mergedStarterPrompts(userState: DemoUserState): { text: string; icon: L
   return out
 }
 
+const FOLLOWUP_AFTER_WATCH: { text: string; icon: LucideIcon }[] = [
+  { text: "What’s the cheapest way to watch more games?", icon: TrendingUp },
+  { text: "What am I missing on video?", icon: Calendar },
+]
+
+const FOLLOWUP_AFTER_PLAN: { text: string; icon: LucideIcon }[] = [
+  { text: "What’s the cheapest upgrade?", icon: TrendingUp },
+  {
+    text: "What would I miss without full coverage, and what’s the cheapest upgrade?",
+    icon: MessageCircle,
+  },
+]
+
+const FOLLOWUP_AFTER_MISSING: { text: string; icon: LucideIcon }[] = [
+  { text: "What should I get first?", icon: Sparkles },
+  { text: "What’s the cheapest upgrade?", icon: TrendingUp },
+]
+
 function followUpPrompts(
   userState: DemoUserState,
-  lastUserMessage: string | undefined
+  lastUserMessage: string | undefined,
+  lastIntent: AssistantIntent | undefined
 ): { text: string; icon: LucideIcon }[] {
   const last = lastUserMessage ? normalizePromptKey(lastUserMessage) : ""
-  const pool = createSuggestedPrompts(userState).map((p) => ({
-    text: p.text,
-    icon: ICON_BY_PROMPT_TEXT[p.text] ?? MessageCircle,
-  }))
-  const filtered = pool.filter((p) => normalizePromptKey(p.text) !== last)
-  return filtered.slice(0, 4)
+
+  let pool: { text: string; icon: LucideIcon }[]
+
+  if (lastIntent === "watch") {
+    pool = [...FOLLOWUP_AFTER_WATCH]
+  } else if (lastIntent === "plan") {
+    pool = [...FOLLOWUP_AFTER_PLAN]
+  } else if (lastIntent === "missing") {
+    pool = [...FOLLOWUP_AFTER_MISSING]
+  } else {
+    pool = createSuggestedPrompts(userState).map((p) => ({
+      text: p.text,
+      icon: ICON_BY_PROMPT_TEXT[p.text] ?? MessageCircle,
+    }))
+  }
+
+  const seen = new Set<string>()
+  const filtered = pool.filter((p) => {
+    const key = normalizePromptKey(p.text)
+    if (key === last || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  return filtered.slice(0, 3)
 }
 
 type EngineAssistantBody =
@@ -98,6 +146,8 @@ interface Message {
   role: "user" | "assistant"
   content: string
   engine?: EngineAssistantBody
+  assistantIntent?: AssistantIntent
+  planScope?: OptimizerScope
 }
 
 function buildAssistantMessage(query: string, userState: DemoUserState): Message {
@@ -111,11 +161,12 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
         id,
         role: "assistant",
         content: "",
+        assistantIntent: "fallback",
         engine: {
           kind: "fallback",
           headline: "Which game?",
           summary:
-            "Say if you mean the Blues or the Cardinals tonight — I’ll check your services against the schedule.",
+            "Name the Blues or the Cardinals and I’ll check video against your services.",
           prompts: promptTexts,
         },
       }
@@ -124,6 +175,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
       id,
       role: "assistant",
       content: "",
+      assistantIntent: "watch",
       engine: { kind: "watch", payload: answerWatchQuestion(parsed.gameId, userState) },
     }
   }
@@ -134,6 +186,8 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
       id,
       role: "assistant",
       content: "",
+      assistantIntent: "plan",
+      planScope: scope,
       engine: { kind: "plan", payload: answerPlanQuestion(scope, userState) },
     }
   }
@@ -144,6 +198,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
       id,
       role: "assistant",
       content: "",
+      assistantIntent: "missing",
       engine: {
         kind: "missing",
         payload: answerMissingGamesQuestion(scope, userState),
@@ -155,31 +210,51 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
     id,
     role: "assistant",
     content: "",
+    assistantIntent: "fallback",
     engine: {
       kind: "fallback",
-      headline: "Not sure how to help with that yet",
-      summary:
-        "Ask about watching a specific game, compare plans, or see where you’re missing video. Pick a prompt below to try things out.",
+      headline: "I need a more specific question",
+      summary: "Ask about watching a game, plans and upgrades, or what you’re missing on video.",
       prompts: promptTexts,
     },
   }
 }
 
-function ResponseReasons({ items }: { items: string[] }) {
+function AssistantContextBar({ userState }: { userState: DemoUserState }) {
+  const line = useMemo(() => {
+    const teamLine = userTeams.map((t) => t.name).join(" + ")
+    const ids = userState.connectedServiceIds
+    const svc =
+      ids.length === 0
+        ? "0 services"
+        : ids.length <= 2
+          ? formatServiceIdList(ids)
+          : `${ids.length} services`
+    const cov = getCurrentCoverageBaseline("both", userState).coveragePercent
+    return `${teamLine} · ${svc} · ${cov}% coverage`
+  }, [userState])
+
+  return (
+    <div className="mb-4 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-center text-[11px] font-medium leading-snug text-muted-foreground">
+      {line}
+    </div>
+  )
+}
+
+function AssistantWhy({ items }: { items: string[] }) {
   if (items.length === 0) return null
   return (
-    <div className="space-y-3 border-t border-border/50 bg-muted/15 px-5 py-5">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-        Details
+    <div className="border-t border-border/40 bg-muted/10 px-4 py-3">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        Why
       </p>
-      <ul className="space-y-3">
+      <ul className="space-y-2">
         {items.map((r, i) => (
-          <li key={i} className="flex gap-3 text-sm leading-relaxed text-muted-foreground">
-            <span
-              className="mt-2 size-1.5 shrink-0 rounded-full bg-accent"
-              aria-hidden
-            />
-            <span className="min-w-0 text-foreground/90">{r}</span>
+          <li
+            key={i}
+            className="border-l-2 border-accent/70 pl-3 text-sm leading-snug text-foreground/90"
+          >
+            {r}
           </li>
         ))}
       </ul>
@@ -197,7 +272,10 @@ function ActionStack({
   userState: DemoUserState
 }) {
   return (
-    <div className="flex flex-col gap-3 border-t border-border/50 p-5">
+    <div className="flex flex-col gap-2 border-t border-border/50 p-4">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        Next
+      </p>
       {primary.href ? (
         <Link
           href={primary.href}
@@ -206,13 +284,13 @@ function ActionStack({
             trackAssistantNavigationClick(userState, primary.href, primary.label)
           }
         >
-          <Button className="h-11 w-full gap-2 text-base font-semibold shadow-sm">
+          <Button className="h-12 w-full gap-2 text-base font-semibold shadow-md">
             {primary.label}
             <ChevronRight className="size-4 opacity-90" />
           </Button>
         </Link>
       ) : (
-        <Button className="h-11 w-full gap-2 text-base font-semibold shadow-sm" type="button">
+        <Button className="h-12 w-full gap-2 text-base font-semibold shadow-md" type="button">
           {primary.label}
           <ChevronRight className="size-4 opacity-90" />
         </Button>
@@ -226,13 +304,17 @@ function ActionStack({
               trackAssistantNavigationClick(userState, secondary.href, secondary.label)
             }
           >
-            <Button variant="outline" className="h-11 w-full gap-2 text-sm font-medium">
+            <Button variant="ghost" className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground">
               {secondary.label}
-              <ChevronRight className="size-4 opacity-70" />
+              <ChevronRight className="size-3.5 opacity-70" />
             </Button>
           </Link>
         ) : (
-          <Button variant="outline" className="h-11 w-full text-sm font-medium" type="button">
+          <Button
+            variant="ghost"
+            className="h-9 w-full text-xs font-medium text-muted-foreground"
+            type="button"
+          >
             {secondary.label}
           </Button>
         ))}
@@ -249,23 +331,23 @@ function SuggestedNextQuestions({
 }) {
   if (prompts.length === 0) return null
   return (
-    <div className="w-full rounded-2xl border border-border/60 bg-card/40 px-4 py-3.5">
-      <p className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+    <div className="w-full rounded-xl border border-border/60 bg-card/40 px-3 py-2.5">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         Suggested next questions
       </p>
-      <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-1.5">
         {prompts.map((p, i) => (
           <button
             key={`${p.text}-${i}`}
             type="button"
             onClick={() => onPick(p.text)}
-            className="flex items-center gap-3 rounded-xl border border-transparent bg-background/80 px-3 py-2.5 text-left text-sm font-medium text-foreground transition-colors hover:border-border hover:bg-secondary/60"
+            className="flex items-center gap-2.5 rounded-lg border border-transparent bg-background/80 px-2.5 py-2 text-left text-sm font-medium text-foreground transition-colors hover:border-border hover:bg-secondary/60"
           >
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary/80">
-              <p.icon className="size-4 text-muted-foreground" />
+            <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-secondary/80">
+              <p.icon className="size-3.5 text-muted-foreground" />
             </span>
             <span className="min-w-0 flex-1 leading-snug">{p.text}</span>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground/70" />
+            <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/70" />
           </button>
         ))}
       </div>
@@ -324,36 +406,38 @@ export default function AssistantPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-foreground">Assistant</h1>
-            <p className="text-xs text-muted-foreground">Your smart sports concierge</p>
+            <p className="text-xs text-muted-foreground">Decide faster, watch smarter</p>
           </div>
         </div>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 px-4 py-6">
+      <main className="mx-auto w-full max-w-lg flex-1 px-4 py-5">
         {messages.length === 0 ? (
           <>
-            <div className="mb-8 text-center">
-              <div className="mx-auto mb-4 flex size-16 items-center justify-center rounded-2xl bg-accent/15 shadow-inner">
-                <Sparkles className="size-8 text-accent" />
+            <div className="mb-6 text-center">
+              <div className="mx-auto mb-3 flex size-14 items-center justify-center rounded-2xl bg-accent/15 shadow-inner">
+                <Sparkles className="size-7 text-accent" />
               </div>
-              <h2 className="mb-2 text-lg font-semibold tracking-tight text-foreground">
+              <h2 className="mb-1.5 text-lg font-semibold tracking-tight text-foreground">
                 Ask anything about watching your teams
               </h2>
               <p className="text-sm leading-relaxed text-muted-foreground">
-                I&apos;ll give you specific, actionable answers
+                Clear call, short reasons, one next step
               </p>
             </div>
 
-            <div className="flex flex-col gap-3">
+            <AssistantContextBar userState={state} />
+
+            <div className="flex flex-col gap-2.5">
               {starterPrompts.map((prompt, i) => (
                 <button
                   key={`${prompt.text}-${i}`}
                   type="button"
                   onClick={() => handleSend(prompt.text, "suggested")}
-                  className="flex items-center gap-4 rounded-2xl border border-border/80 bg-card p-4 text-left shadow-sm transition-colors hover:border-accent/25 hover:bg-secondary/40"
+                  className="flex items-center gap-3 rounded-xl border border-border/80 bg-card p-3.5 text-left shadow-sm transition-colors hover:border-accent/25 hover:bg-secondary/40"
                 >
-                  <div className="flex size-10 items-center justify-center rounded-xl bg-secondary/90">
-                    <prompt.icon className="size-5 text-muted-foreground" />
+                  <div className="flex size-9 items-center justify-center rounded-lg bg-secondary/90">
+                    <prompt.icon className="size-4 text-muted-foreground" />
                   </div>
                   <span className="flex-1 text-sm font-medium leading-snug text-foreground">
                     {prompt.text}
@@ -364,35 +448,38 @@ export default function AssistantPage() {
             </div>
           </>
         ) : (
-          <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-5">
+            <AssistantContextBar userState={state} />
             {messages.map((message, index) => (
               <div
                 key={message.id}
                 className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}
               >
                 {message.role === "user" ? (
-                  <div className="max-w-[88%] rounded-2xl bg-accent px-4 py-3 text-accent-foreground shadow-sm">
+                  <div className="max-w-[88%] rounded-2xl bg-accent px-4 py-2.5 text-accent-foreground shadow-sm">
                     <p className="text-sm leading-relaxed">{message.content}</p>
                   </div>
                 ) : message.engine ? (
-                  <div className="w-full space-y-4">
+                  <div className="w-full space-y-3">
                     <EngineResponseCard
                       body={message.engine}
                       userState={state}
+                      planScope={message.planScope}
                       onPickPrompt={(t) => handleSend(t, "suggested")}
                     />
                     {message.engine.kind !== "fallback" && (
                       <SuggestedNextQuestions
                         prompts={followUpPrompts(
                           state,
-                          index > 0 ? messages[index - 1]?.content : undefined
+                          index > 0 ? messages[index - 1]?.content : undefined,
+                          message.assistantIntent
                         )}
                         onPick={(t) => handleSend(t, "suggested")}
                       />
                     )}
                   </div>
                 ) : (
-                  <div className="max-w-[88%] rounded-2xl border border-border/60 bg-card px-4 py-3 text-card-foreground shadow-sm">
+                  <div className="max-w-[88%] rounded-2xl border border-border/60 bg-card px-4 py-2.5 text-card-foreground shadow-sm">
                     <p className="text-sm leading-relaxed">{message.content}</p>
                   </div>
                 )}
@@ -428,39 +515,75 @@ export default function AssistantPage() {
   )
 }
 
+function CompactMissingGamesList({ rows }: { rows: MissingGamesAnswer["missingGames"] }) {
+  if (rows.length === 0) return null
+  const shown = rows.slice(0, 3)
+  const rest = rows.length - shown.length
+  return (
+    <div className="border-t border-border/40 px-4 py-3">
+      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+        Games missing video
+      </p>
+      <ul className="space-y-1.5">
+        {shown.map((g) => (
+          <li
+            key={g.gameId}
+            className="rounded-lg border border-border/40 bg-background/50 px-2.5 py-1.5"
+          >
+            <span className="text-xs font-medium text-foreground">{g.label}</span>
+            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+              {g.dateLabel} · {g.status === "listen-only" ? "Listen only" : "No video"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {rest > 0 && (
+        <p className="mt-2 text-[11px] text-muted-foreground">+{rest} more on the schedule</p>
+      )}
+    </div>
+  )
+}
+
 function EngineResponseCard({
   body,
   onPickPrompt,
   userState,
+  planScope,
 }: {
   body: EngineAssistantBody
   onPickPrompt: (text: string) => void
   userState: DemoUserState
+  planScope?: OptimizerScope
 }) {
   if (body.kind === "fallback") {
+    const decision = formatAssistantDecision({ kind: "fallback", headline: body.headline })
+    const why = formatAssistantWhy({ kind: "fallback", summary: body.summary })
     return (
-      <Card className="w-full overflow-hidden rounded-2xl border-border/80 bg-card shadow-md">
-        <div className="border-b border-border/50 bg-gradient-to-br from-secondary/50 to-secondary/20 px-5 py-5">
-          <p className="text-base font-semibold leading-snug tracking-tight text-foreground">
-            {body.headline}
+      <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">
+        <div className="bg-gradient-to-br from-secondary/40 to-secondary/15 px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Decision
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{body.summary}</p>
+          <p className="mt-1 text-base font-bold leading-snug tracking-tight text-foreground">
+            {decision}
+          </p>
         </div>
-        <div className="p-5">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <AssistantWhy items={why} />
+        <div className="p-4 pt-2">
+          <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
             Try asking
           </p>
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
             {DEMO_SUGGESTED_PROMPTS.filter((p) => body.prompts.includes(p.text)).map((p, i) => (
               <button
                 key={i}
                 type="button"
                 onClick={() => onPickPrompt(p.text)}
-                className="flex items-center gap-3 rounded-xl border border-border/70 bg-background/90 px-3 py-3 text-left text-sm font-medium text-foreground transition-colors hover:border-accent/30 hover:bg-secondary/50"
+                className="flex items-center gap-2.5 rounded-lg border border-border/70 bg-background/90 px-2.5 py-2 text-left text-sm font-medium text-foreground transition-colors hover:border-accent/30 hover:bg-secondary/50"
               >
-                <p.icon className="size-4 shrink-0 text-muted-foreground" />
+                <p.icon className="size-3.5 shrink-0 text-muted-foreground" />
                 <span className="min-w-0 flex-1 leading-snug">{p.text}</span>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
               </button>
             ))}
           </div>
@@ -471,18 +594,23 @@ function EngineResponseCard({
 
   if (body.kind === "watch") {
     const p = body.payload
+    const decision = formatAssistantDecision({ kind: "watch", payload: p })
+    const why = formatAssistantWhy({ kind: "watch", payload: p })
+    const next = formatAssistantNextAction({ kind: "watch", payload: p })
     return (
-      <Card className="w-full overflow-hidden rounded-2xl border-border/80 bg-card shadow-md">
-        <div className="border-b border-border/50 bg-gradient-to-br from-secondary/50 to-secondary/20 px-5 py-5">
-          <p className="text-base font-semibold leading-snug tracking-tight text-foreground">
-            {p.headline}
+      <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">
+        <div className="bg-gradient-to-br from-secondary/40 to-secondary/15 px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Decision
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{p.summary}</p>
+          <p className="mt-1 text-base font-bold leading-snug tracking-tight text-foreground">
+            {decision}
+          </p>
         </div>
-        <ResponseReasons items={p.reasons} />
+        <AssistantWhy items={why} />
         <ActionStack
-          primary={p.primaryAction}
-          secondary={p.secondaryAction}
+          primary={next.primary}
+          secondary={next.secondary}
           userState={userState}
         />
       </Card>
@@ -491,56 +619,66 @@ function EngineResponseCard({
 
   if (body.kind === "plan") {
     const p = body.payload
+    const scope = planScope ?? "both"
+    const decision = formatAssistantDecision({
+      kind: "plan",
+      payload: p,
+      scope,
+      userState,
+    })
+    const why = formatAssistantWhy({
+      kind: "plan",
+      payload: p,
+      scope,
+      userState,
+      decisionText: decision,
+    })
+    const next = formatAssistantNextAction({ kind: "plan", payload: p })
     return (
-      <Card className="w-full overflow-hidden rounded-2xl border-border/80 bg-card shadow-md">
-        <div className="border-b border-border/50 bg-gradient-to-br from-secondary/50 to-secondary/20 px-5 py-5">
-          <p className="text-base font-semibold leading-snug tracking-tight text-foreground">
-            {p.headline}
+      <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">
+        <div className="bg-gradient-to-br from-secondary/40 to-secondary/15 px-4 py-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Decision
           </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{p.summary}</p>
+          <p className="mt-1 text-base font-bold leading-snug tracking-tight text-foreground">
+            {decision}
+          </p>
         </div>
-        <ResponseReasons items={p.reasons} />
-        <ActionStack
-          primary={{ label: "Compare plans", href: "/plans" }}
-          userState={userState}
-        />
+        <AssistantWhy items={why} />
+        <ActionStack primary={next.primary} userState={userState} />
       </Card>
     )
   }
 
   const p = body.payload
+  const decision = formatAssistantDecision({ kind: "missing", payload: p })
+  const why = formatAssistantWhy({
+    kind: "missing",
+    payload: p,
+    userState,
+    decisionText: decision,
+  })
+  const next = formatAssistantNextAction({
+    kind: "missing",
+    payload: p,
+    userState,
+  })
+
   return (
-    <Card className="w-full overflow-hidden rounded-2xl border-border/80 bg-card shadow-md">
-      <div className="border-b border-border/50 bg-gradient-to-br from-secondary/50 to-secondary/20 px-5 py-5">
-        <p className="text-base font-semibold leading-snug tracking-tight text-foreground">
-          {p.headline}
+    <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">
+      <div className="bg-gradient-to-br from-secondary/40 to-secondary/15 px-4 py-3.5">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+          Decision
         </p>
-        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{p.summary}</p>
+        <p className="mt-1 text-base font-bold leading-snug tracking-tight text-foreground">
+          {decision}
+        </p>
       </div>
-      {p.missingGames.length > 0 && (
-        <div className="border-t border-border/50 bg-muted/10 px-5 py-5">
-          <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Not fully watchable
-          </p>
-          <ul className="space-y-3">
-            {p.missingGames.map((g) => (
-              <li
-                key={g.gameId}
-                className="rounded-xl border border-border/50 bg-background/60 px-3 py-2.5"
-              >
-                <span className="text-sm font-medium text-foreground">{g.label}</span>
-                <span className="mt-1 block text-xs text-muted-foreground">
-                  {g.dateLabel} · {g.status === "listen-only" ? "Listen only" : "Not available"}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      <ResponseReasons items={p.reasons} />
+      <AssistantWhy items={why} />
+      <CompactMissingGamesList rows={p.missingGames} />
       <ActionStack
-        primary={p.primaryAction}
-        secondary={p.secondaryAction}
+        primary={next.primary}
+        secondary={next.secondary}
         userState={userState}
       />
     </Card>

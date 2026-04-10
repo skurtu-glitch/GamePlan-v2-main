@@ -416,14 +416,14 @@ export function createSuggestedPrompts(userState: DemoUserState): SuggestedPromp
     prompts.push({ text: "Why can’t I watch the Cardinals tonight?" })
   }
 
-  prompts.push({ text: "What’s the cheapest way to follow both teams?" })
-  prompts.push({ text: "What games am I missing on video?" })
+  prompts.push({ text: "What’s the cheapest way to watch more games?" })
+  prompts.push({ text: "What am I missing on video?" })
 
   const hasVideo = userState.connectedServiceIds.some((id) =>
     ["espn-plus", "mlb-tv", "fanduel-sports", "max"].includes(id)
   )
   if (!hasVideo) {
-    prompts.push({ text: "What should I subscribe to first?" })
+    prompts.push({ text: "What should I add first?" })
   }
 
   return prompts

@@ -63,7 +63,7 @@ const CURATED_LISTEN_FEEDS: Record<string, ListenFeed[]> = {
 function defaultListenFeedsForGame(game: Game): ListenFeed[] {
   const homeProvider = game.listen.provider?.trim() || "Team audio"
   const national: ListenFeed =
-    game.homeTeam.sport === "MLB"
+    game.homeTeam.league === "MLB"
       ? { name: "MLB Audio", type: "national", provider: "MLB App", free: false }
       : { name: "NHL App Audio", type: "national", provider: "NHL App", free: false }
 

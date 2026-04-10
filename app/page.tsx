@@ -3,12 +3,26 @@
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
+import { ScheduleGameRow } from "@/components/schedule-game-row"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
 import {
   ScheduleHydrationSkeleton,
   useSchedule,
 } from "@/components/providers/schedule-provider"
 import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
+import {
+  followedTeamNamesPlus,
+  followedTeamsHeaderLine,
+  followedTeamsScopePhrase,
+} from "@/lib/followed-teams-copy"
+import {
+  formatUpcomingWatchSecondaryLine,
+  formatUpcomingWatchSummaryLine,
+  groupUpcomingSampleByLeague,
+  HOME_UPCOMING_SAMPLE_CAP,
+  sortGamesByStartTime,
+  upcomingSampleWatchCounts,
+} from "@/lib/home-upcoming-schedule"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import { ACCESS_RULES_SEE_PLANS } from "@/lib/access-rules"
 import {
@@ -243,6 +257,39 @@ export default function HomePage() {
     return { tonightsGames: tonights, upcomingGames: upcoming }
   }, [scheduleTick, userGames])
 
+  const upcomingSorted = useMemo(
+    () => sortGamesByStartTime(upcomingGames),
+    [upcomingGames]
+  )
+  const upcomingSample = useMemo(
+    () => upcomingSorted.slice(0, HOME_UPCOMING_SAMPLE_CAP),
+    [upcomingSorted]
+  )
+  const upcomingWatchCounts = useMemo(
+    () => upcomingSampleWatchCounts(upcomingSample, state),
+    [upcomingSample, state]
+  )
+  const upcomingByLeague = useMemo(
+    () => groupUpcomingSampleByLeague(upcomingSample),
+    [upcomingSample]
+  )
+  const upcomingSummaryPrimary = useMemo(
+    () =>
+      formatUpcomingWatchSummaryLine(
+        upcomingWatchCounts.watchable,
+        upcomingWatchCounts.total
+      ),
+    [upcomingWatchCounts.watchable, upcomingWatchCounts.total]
+  )
+  const upcomingSummarySecondary = useMemo(
+    () =>
+      formatUpcomingWatchSecondaryLine(
+        upcomingWatchCounts.watchable,
+        upcomingWatchCounts.total
+      ),
+    [upcomingWatchCounts.watchable, upcomingWatchCounts.total]
+  )
+
   const { watchableTonight, listenOnlyTonight, unavailableTonight } = useMemo(() => {
     let w = 0
     let l = 0
@@ -346,7 +393,10 @@ export default function HomePage() {
       default:
         return {
           headline: `${watchableTonight} of ${tonightsGames.length} games watchable tonight`,
-          subtext: "You can follow both games with your current plan",
+          subtext:
+            tonightsGames.length === 1
+              ? "You can follow tonight’s game with your current plan"
+              : `You can follow all ${tonightsGames.length} of tonight’s games with your current plan`,
           color: "text-foreground",
           icon: null
         }
@@ -365,7 +415,7 @@ export default function HomePage() {
           </p>
           <h1 className="text-xl font-bold text-foreground">GamePlan</h1>
           <p className="mt-1 text-xs text-muted-foreground">
-            Blues + Cardinals — both teams on your schedule
+            {followedTeamsHeaderLine(state.followedTeamIds)}
           </p>
         </div>
       </header>
@@ -447,7 +497,7 @@ export default function HomePage() {
                   Your Coverage Tonight
                 </h2>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  Blues + Cardinals · today
+                  {followedTeamNamesPlus(state.followedTeamIds)} · today
                 </p>
               </div>
               <div className="p-5">
@@ -633,143 +683,83 @@ export default function HomePage() {
           </section>
         )}
 
-        {/* UPCOMING GAMES */}
-        {!scheduleBlocked && upcomingGames.length > 0 && (
+        {/* UPCOMING GAMES — capped sample, grouped by league (NHL / MLB) */}
+        {!scheduleBlocked && upcomingSample.length > 0 && (
           <section className="mb-8">
-            <div className="mb-4 flex flex-col gap-0.5">
+            <div className="mb-4 flex flex-col gap-1">
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 {coverageState === "no_games" ? "Coming Up" : "Upcoming Games"}
               </h2>
               <p className="text-[11px] text-muted-foreground">
-                Blues + Cardinals · both teams
+                {followedTeamNamesPlus(state.followedTeamIds)} ·{" "}
+                {followedTeamsScopePhrase(state.followedTeamIds)}
               </p>
+              <p className="text-xs font-medium leading-snug text-foreground/90">
+                {upcomingSummaryPrimary}
+              </p>
+              {upcomingSummarySecondary && (
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  {upcomingSummarySecondary}
+                </p>
+              )}
             </div>
-            <div className="flex flex-col gap-3">
-              {upcomingGames.slice(0, coverageState === "no_games" ? 5 : 3).map((game) => {
-                const access = resolveGameAccess(game, state)
-                const rowStatus =
-                  access.status === "watchable"
-                    ? ("watchable" as const)
-                    : access.status === "listen-only"
-                      ? ("listen" as const)
-                      : ("unavailable" as const)
-                const rowActionLabel = homeGameRowPrimaryLabel(access)
-                const upcomingFixHint =
-                  rowStatus !== "watchable" &&
-                  access.fixRecommendation &&
-                  access.fixRecommendation !== ACCESS_RULES_SEE_PLANS
-                    ? access.fixRecommendation
-                    : null
-
-                return (
-                  <Card
-                    key={game.id}
-                    className="overflow-hidden border-border bg-card/50 p-0 transition-colors hover:bg-card"
-                  >
-                    <div className="flex flex-col gap-0">
-                      <Link
-                        href={`/game/${game.id}`}
-                        className="block"
-                        onClick={() =>
-                          trackEvent(AnalyticsEvent.watchActionClick, {
-                            ...analyticsBase("home", state, {
-                              game_id: game.id,
-                              href: `/game/${game.id}`,
-                              label: "upcoming_game_card",
-                            }),
-                            recommended_plan_id:
-                              homeRecommendations.bestValuePlanId ?? undefined,
-                          })
-                        }
-                      >
-                        <div className="flex items-center gap-3 p-3">
-                          <div className="flex items-center -space-x-1.5">
-                            <div
-                              className="flex size-8 items-center justify-center rounded-md border border-background text-[10px] font-bold text-white"
-                              style={{ backgroundColor: game.awayTeam.primaryColor }}
-                            >
-                              {game.awayTeam.abbreviation}
-                            </div>
-                            <div
-                              className="flex size-8 items-center justify-center rounded-md border border-background text-[10px] font-bold text-white"
-                              style={{ backgroundColor: game.homeTeam.primaryColor }}
-                            >
-                              {game.homeTeam.abbreviation}
-                            </div>
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium text-foreground">
-                              {game.awayTeam.abbreviation} @ {game.homeTeam.abbreviation}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                              {formatDate(game.dateTime)} · {formatTime(game.dateTime)}
-                            </p>
-                          </div>
-                          <div className="flex shrink-0 flex-col items-end gap-1">
-                            {rowStatus === "watchable" ? (
-                              <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-400">
-                                <Tv className="size-3" />
-                              </span>
-                            ) : rowStatus === "listen" ? (
-                              <span className="flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-1 text-xs font-medium text-amber-400">
-                                <Radio className="size-3" />
-                              </span>
-                            ) : (
-                              <span className="flex items-center gap-1 rounded-full bg-zinc-500/15 px-2 py-1 text-xs font-medium text-zinc-400">
-                                <Zap className="size-3" />
-                              </span>
-                            )}
-                            <span
-                              className={`flex items-center gap-0.5 text-xs font-medium ${
-                                rowStatus === "watchable"
-                                  ? "text-emerald-400"
-                                  : rowStatus === "listen"
-                                    ? "text-amber-400"
-                                    : "text-accent"
-                              }`}
-                            >
-                              {rowActionLabel}
-                              <ChevronRight className="size-3" />
-                            </span>
-                          </div>
-                        </div>
-                      </Link>
-                      {rowStatus !== "watchable" && (
-                        <div className="border-t border-border/40 px-3 py-2 text-xs text-muted-foreground">
-                          {upcomingFixHint && <p>{upcomingFixHint}</p>}
-                          <Link
-                            href="/plans"
-                            className={`inline-flex items-center gap-1 font-medium text-accent ${
-                              upcomingFixHint ? "mt-1" : ""
-                            }`}
-                            onClick={() => {
-                              trackEvent(AnalyticsEvent.ctaSecondaryClick, {
-                                ...analyticsBase("home", state, {
-                                  href: "/plans",
-                                  label: labelSeeAllPlans(),
-                                  game_id: game.id,
-                                }),
-                              })
-                              trackEvent(AnalyticsEvent.comparePlansClick, {
-                                ...analyticsBase("home", state, {
-                                  href: "/plans",
-                                  label: labelSeeAllPlans(),
-                                  game_id: game.id,
-                                }),
-                              })
-                            }}
-                          >
-                            {labelSeeAllPlans()}
-                            <ChevronRight className="size-3.5" />
-                          </Link>
-                        </div>
-                      )}
-                    </div>
-                  </Card>
-                )
-              })}
+            <div className="flex flex-col gap-5">
+              {upcomingByLeague.nhl.length > 0 && (
+                <div>
+                  <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    NHL
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {upcomingByLeague.nhl.map((game) => (
+                      <ScheduleGameRow
+                        key={game.id}
+                        game={game}
+                        demoState={state}
+                        formatDate={formatDate}
+                        formatTime={formatTime}
+                        recommendedPlanId={homeRecommendations.bestValuePlanId}
+                        analyticsSurface="home"
+                        watchEventLabel="upcoming_game_card"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+              {upcomingByLeague.mlb.length > 0 && (
+                <div>
+                  <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                    MLB
+                  </h3>
+                  <div className="flex flex-col gap-3">
+                    {upcomingByLeague.mlb.map((game) => (
+                      <ScheduleGameRow
+                        key={game.id}
+                        game={game}
+                        demoState={state}
+                        formatDate={formatDate}
+                        formatTime={formatTime}
+                        recommendedPlanId={homeRecommendations.bestValuePlanId}
+                        analyticsSurface="home"
+                        watchEventLabel="upcoming_game_card"
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </section>
+        )}
+
+        {!scheduleBlocked && userGames.length > 0 && (
+          <div className="mb-8 flex justify-center">
+            <Link
+              href="/schedule"
+              className="inline-flex items-center gap-1 text-sm font-medium text-accent"
+            >
+              View full schedule
+              <ChevronRight className="size-4" />
+            </Link>
+          </div>
         )}
 
         {/* Suggested for You — optimizer-led, at end of Home flow */}
@@ -783,7 +773,7 @@ export default function HomePage() {
               Suggested for You
             </p>
             <p className="mb-1 text-[11px] text-muted-foreground">
-              Best next move · both teams (same scope as this home schedule)
+              Best next move · your followed teams (same scope as this home schedule)
             </p>
             <p className="mb-3 text-xs tabular-nums leading-relaxed text-muted-foreground">
               {suggestedForYou.wowMetricLine}

@@ -7,15 +7,18 @@
  */
 
 import type { Game, Team } from "@/lib/types"
-import { composeEngineGamesFromNormalized } from "@/lib/data-normalization/compose-engine-games"
+import {
+  composeEngineGamesFromNormalized,
+  optionalAccessForProfile,
+} from "@/lib/data-normalization/compose-engine-games"
 import { normalizeScheduleIngest } from "@/lib/data-normalization/normalize-schedule"
 import type { ScheduleValidationError } from "@/lib/data-validation/validate-schedule-ingest"
 import { validateScheduleIngest } from "@/lib/data-validation/validate-schedule-ingest"
-import { LISTEN_FEED, PROVIDER_LABEL } from "@/lib/streaming-service-ids"
 import defaultIngest from "@/lib/data-sources/schedule/ingest-default.json"
-import type { ScheduleIngestPayload } from "@/lib/data-sources/schedule/types"
+import { listenLabelForGame, watchMappingForProfile } from "@/lib/data-sources/rights/provider-map"
+import type { BroadcastProfileId, ScheduleIngestPayload } from "@/lib/data-sources/schedule/types"
 import { getActiveEngineGames } from "@/lib/schedule-client-bridge"
-import type { NormalizedGame, NormalizedLeague, NormalizedTeamSide } from "./types"
+import type { NormalizedGame, NormalizedTeamSide } from "./types"
 
 export interface GamesDataSource {
   getEngineGames(): Game[]
@@ -160,9 +163,13 @@ export function bindDemoSchedule(teams: Team[], referenceOverride?: Date): void 
   const anchor = referenceOverride ?? new Date()
   const teamById = new Map(teams.map((t) => [t.id, t]))
   const teamIds = teams.map((t) => t.id)
+  const teamLeagueById = new Map(teams.map((t) => [t.id, t.league]))
   const checkedAt = new Date().toISOString()
   try {
-    const v = validateScheduleIngest(defaultIngest as unknown, { allowedTeamIds: teamIds })
+    const v = validateScheduleIngest(defaultIngest as unknown, {
+      allowedTeamIds: teamIds,
+      teamLeagueById,
+    })
     if (!v.ok) {
       lastScheduleValidation = {
         status: "error",
@@ -222,15 +229,10 @@ export function toNormalizedTeamSide(team: Team): NormalizedTeamSide {
   }
 }
 
-function leagueFromSport(sport: Team["sport"]): NormalizedLeague {
-  if (sport === "NHL" || sport === "MLB") return sport
-  return "NHL"
-}
-
 export function toNormalizedGame(game: Game): NormalizedGame {
   return {
     id: game.id,
-    league: leagueFromSport(game.homeTeam.sport),
+    league: game.homeTeam.league,
     homeTeam: toNormalizedTeamSide(game.homeTeam),
     awayTeam: toNormalizedTeamSide(game.awayTeam),
     startTime: game.dateTime,
@@ -289,6 +291,52 @@ export function getDefaultGamesDataSource(): GamesDataSource {
   }
 }
 
+function recommendationForStaticWatch(status: Game["watch"]["status"]): Game["recommendation"] {
+  if (status === "available") return "Watch"
+  if (status === "partial") return "Just Listen"
+  return "Just Listen"
+}
+
+function staticDemoGame(
+  teams: Team[],
+  spec: {
+    id: string
+    homeId: string
+    awayId: string
+    dateTime: string
+    venue: string
+    profile: BroadcastProfileId
+  }
+): Game {
+  const home = teams.find((t) => t.id === spec.homeId)
+  const away = teams.find((t) => t.id === spec.awayId)
+  if (!home || !away) {
+    throw new Error(`buildStaticDemoEngineGames: missing team for ${spec.id}`)
+  }
+  const wm = watchMappingForProfile(spec.profile)
+  const listenLabel = listenLabelForGame(spec.homeId, spec.awayId)
+  const watch: Game["watch"] = {
+    status: wm.status,
+    provider: wm.provider,
+    providers: [...wm.providers],
+    ...(wm.note ? { note: wm.note } : {}),
+  }
+  const game: Game = {
+    id: spec.id,
+    homeTeam: home,
+    awayTeam: away,
+    dateTime: spec.dateTime,
+    watch,
+    listen: { status: "available", provider: listenLabel },
+    recommendation: recommendationForStaticWatch(watch.status),
+    venue: spec.venue,
+  }
+  const access = optionalAccessForProfile(spec.profile, listenLabel)
+  if (access) game.access = access
+  return game
+}
+
+/** Mirrors `ingest-default.json` for pipeline fallback parity (stable ids game-1 …). */
 export function buildStaticDemoEngineGames(teams: Team[], today: Date): Game[] {
   const todayAt = (hour: number, min = 0) => {
     const d = new Date(today)
@@ -308,143 +356,239 @@ export function buildStaticDemoEngineGames(teams: Team[], today: Date): Game[] {
     return d.toISOString()
   }
 
-  return [
+  const specs: Array<{
+    id: string
+    homeId: string
+    awayId: string
+    dateTime: string
+    venue: string
+    profile: BroadcastProfileId
+  }> = [
     {
       id: "game-1",
-      homeTeam: teams.find((t) => t.id === "stl-blues")!,
-      awayTeam: teams.find((t) => t.id === "col-avalanche")!,
+      homeId: "stl-blues",
+      awayId: "col-avalanche",
       dateTime: todayAt(19, 0),
-      watch: {
-        status: "available",
-        provider: PROVIDER_LABEL.ESPN_PLUS,
-        providers: ["espn-plus"],
-      },
-      listen: {
-        status: "available",
-        provider: LISTEN_FEED.BLUES_AM,
-      },
-      recommendation: "Watch",
       venue: "Enterprise Center",
-      access: {
-        status: "watchable",
-        reason: `Available on ${PROVIDER_LABEL.ESPN_PLUS} with your subscription`,
-        actions: [
-          {
-            label: `Watch on ${PROVIDER_LABEL.ESPN_PLUS}`,
-            type: "open",
-            provider: PROVIDER_LABEL.ESPN_PLUS,
-          },
-          {
-            label: `Listen on ${LISTEN_FEED.BLUES_AM}`,
-            type: "open",
-            provider: LISTEN_FEED.BLUES_AM,
-          },
-        ],
-        bestOption: {
-          label: `Watch on ${PROVIDER_LABEL.ESPN_PLUS}`,
-          action: {
-            label: `Watch on ${PROVIDER_LABEL.ESPN_PLUS}`,
-            type: "open",
-            provider: PROVIDER_LABEL.ESPN_PLUS,
-          },
-        },
-      },
+      profile: "nhl-national-espn-plus",
     },
     {
       id: "game-2",
-      homeTeam: teams.find((t) => t.id === "stl-cardinals")!,
-      awayTeam: teams.find((t) => t.id === "chi-cubs")!,
+      homeId: "stl-cardinals",
+      awayId: "chi-cubs",
       dateTime: todayAt(19, 15),
-      watch: {
-        status: "unavailable",
-        provider: PROVIDER_LABEL.FANDUEL_RSN,
-        providers: ["fanduel-sports"],
-        note: "Not available with your current plan",
-      },
-      listen: {
-        status: "available",
-        provider: LISTEN_FEED.CARDINALS_AM,
-      },
-      recommendation: "Just Listen",
       venue: "Busch Stadium",
-      access: {
-        status: "unavailable",
-        reason: `Your plan doesn't include ${PROVIDER_LABEL.FANDUEL_RSN}`,
-        actions: [
-          {
-            label: `Add ${PROVIDER_LABEL.FANDUEL_RSN}`,
-            type: "add",
-            provider: PROVIDER_LABEL.FANDUEL_RSN,
-            price: "$19.99/mo",
-          },
-          {
-            label: `Listen free on ${LISTEN_FEED.CARDINALS_AM}`,
-            type: "open",
-            provider: LISTEN_FEED.CARDINALS_AM,
-          },
-        ],
-        bestOption: {
-          label: "Add RSN to watch",
-          action: {
-            label: `Add ${PROVIDER_LABEL.FANDUEL_RSN}`,
-            type: "add",
-            provider: PROVIDER_LABEL.FANDUEL_RSN,
-            price: "$19.99/mo",
-          },
-        },
-      },
+      profile: "mlb-rsn-fanduel-unavailable",
     },
     {
       id: "game-3",
-      homeTeam: teams.find((t) => t.id === "col-avalanche")!,
-      awayTeam: teams.find((t) => t.id === "stl-blues")!,
+      homeId: "col-avalanche",
+      awayId: "stl-blues",
       dateTime: tomorrowAt(20, 0),
-      watch: {
-        status: "available",
-        provider: PROVIDER_LABEL.MAX,
-        providers: ["max"],
-      },
-      listen: {
-        status: "available",
-        provider: LISTEN_FEED.BLUES_AM,
-      },
-      recommendation: "Watch",
       venue: "Ball Arena",
+      profile: "nhl-national-max",
     },
     {
       id: "game-4",
-      homeTeam: teams.find((t) => t.id === "chi-cubs")!,
-      awayTeam: teams.find((t) => t.id === "stl-cardinals")!,
+      homeId: "chi-cubs",
+      awayId: "stl-cardinals",
       dateTime: daysFromNow(3, 13, 20),
-      watch: {
-        status: "partial",
-        provider: PROVIDER_LABEL.MLB_TV,
-        providers: ["mlb-tv"],
-        note: "Out-of-market only",
-      },
-      listen: {
-        status: "available",
-        provider: LISTEN_FEED.CARDINALS_AM,
-      },
-      recommendation: "Just Listen",
       venue: "Wrigley Field",
+      profile: "mlb-oom-mlb-tv",
     },
     {
       id: "game-5",
-      homeTeam: teams.find((t) => t.id === "stl-blues")!,
-      awayTeam: teams.find((t) => t.id === "col-avalanche")!,
+      homeId: "stl-blues",
+      awayId: "col-avalanche",
       dateTime: daysFromNow(5, 19, 0),
-      watch: {
-        status: "available",
-        provider: PROVIDER_LABEL.FANDUEL_RSN,
-        providers: ["fanduel-sports"],
-      },
-      listen: {
-        status: "available",
-        provider: LISTEN_FEED.BLUES_AM,
-      },
-      recommendation: "Watch",
       venue: "Enterprise Center",
+      profile: "nhl-rsn-fanduel-available",
+    },
+    {
+      id: "game-6",
+      homeId: "ny-rangers",
+      awayId: "chi-blackhawks",
+      dateTime: daysFromNow(2, 19, 0),
+      venue: "Madison Square Garden",
+      profile: "nhl-national-espn-plus",
+    },
+    {
+      id: "game-7",
+      homeId: "dal-stars",
+      awayId: "stl-blues",
+      dateTime: daysFromNow(4, 20, 0),
+      venue: "American Airlines Center",
+      profile: "nhl-national-max",
+    },
+    {
+      id: "game-8",
+      homeId: "pit-pirates",
+      awayId: "cin-reds",
+      dateTime: daysFromNow(4, 18, 40),
+      venue: "PNC Park",
+      profile: "mlb-rsn-fanduel-unavailable",
+    },
+    {
+      id: "game-9",
+      homeId: "mil-brewers",
+      awayId: "stl-cardinals",
+      dateTime: daysFromNow(6, 19, 10),
+      venue: "American Family Field",
+      profile: "mlb-oom-mlb-tv",
+    },
+    {
+      id: "game-10",
+      homeId: "chi-blackhawks",
+      awayId: "col-avalanche",
+      dateTime: daysFromNow(7, 20, 0),
+      venue: "United Center",
+      profile: "nhl-rsn-fanduel-available",
+    },
+    {
+      id: "game-11",
+      homeId: "stl-blues",
+      awayId: "chi-blackhawks",
+      dateTime: daysFromNow(8, 19, 0),
+      venue: "Enterprise Center",
+      profile: "nhl-rsn-fanduel-available",
+    },
+    {
+      id: "game-12",
+      homeId: "stl-cardinals",
+      awayId: "cin-reds",
+      dateTime: daysFromNow(8, 18, 35),
+      venue: "Busch Stadium",
+      profile: "mlb-rsn-fanduel-unavailable",
+    },
+    {
+      id: "game-13",
+      homeId: "ny-rangers",
+      awayId: "stl-blues",
+      dateTime: daysFromNow(9, 19, 30),
+      venue: "Madison Square Garden",
+      profile: "nhl-national-max",
+    },
+    {
+      id: "game-14",
+      homeId: "stl-cardinals",
+      awayId: "pit-pirates",
+      dateTime: daysFromNow(9, 19, 5),
+      venue: "Busch Stadium",
+      profile: "mlb-national-espn-plus",
+    },
+    {
+      id: "game-15",
+      homeId: "chi-blackhawks",
+      awayId: "stl-blues",
+      dateTime: daysFromNow(10, 20, 30),
+      venue: "United Center",
+      profile: "nhl-national-espn-plus",
+    },
+    {
+      id: "game-16",
+      homeId: "cin-reds",
+      awayId: "stl-cardinals",
+      dateTime: daysFromNow(10, 18, 40),
+      venue: "Great American Ball Park",
+      profile: "mlb-oom-mlb-tv",
+    },
+    {
+      id: "game-17",
+      homeId: "stl-blues",
+      awayId: "dal-stars",
+      dateTime: daysFromNow(11, 20, 0),
+      venue: "Enterprise Center",
+      profile: "nhl-oom-nhl-tv",
+    },
+    {
+      id: "game-18",
+      homeId: "stl-cardinals",
+      awayId: "mil-brewers",
+      dateTime: daysFromNow(11, 19, 15),
+      venue: "Busch Stadium",
+      profile: "mlb-rsn-fanduel-unavailable",
+    },
+    {
+      id: "game-19",
+      homeId: "col-avalanche",
+      awayId: "stl-blues",
+      dateTime: daysFromNow(12, 21, 0),
+      venue: "Ball Arena",
+      profile: "nhl-national-max",
+    },
+    {
+      id: "game-20",
+      homeId: "stl-cardinals",
+      awayId: "chi-cubs",
+      dateTime: daysFromNow(12, 18, 15),
+      venue: "Busch Stadium",
+      profile: "mlb-rsn-fanduel-unavailable",
+    },
+    {
+      id: "game-21",
+      homeId: "pit-pirates",
+      awayId: "stl-cardinals",
+      dateTime: daysFromNow(13, 18, 5),
+      venue: "PNC Park",
+      profile: "mlb-oom-mlb-tv",
+    },
+    {
+      id: "game-22",
+      homeId: "stl-blues",
+      awayId: "ny-rangers",
+      dateTime: daysFromNow(13, 19, 0),
+      venue: "Enterprise Center",
+      profile: "nhl-rsn-fanduel-available",
+    },
+    {
+      id: "game-23",
+      homeId: "stl-cardinals",
+      awayId: "cin-reds",
+      dateTime: daysFromNow(14, 12, 10),
+      venue: "Busch Stadium",
+      profile: "mlb-national-espn-plus",
+    },
+    {
+      id: "game-24",
+      homeId: "chi-cubs",
+      awayId: "stl-cardinals",
+      dateTime: daysFromNow(14, 13, 20),
+      venue: "Wrigley Field",
+      profile: "mlb-oom-mlb-tv",
+    },
+    {
+      id: "game-25",
+      homeId: "dal-stars",
+      awayId: "ny-rangers",
+      dateTime: daysFromNow(8, 20, 0),
+      venue: "American Airlines Center",
+      profile: "nhl-national-espn-plus",
+    },
+    {
+      id: "game-26",
+      homeId: "pit-pirates",
+      awayId: "mil-brewers",
+      dateTime: daysFromNow(12, 19, 10),
+      venue: "PNC Park",
+      profile: "mlb-rsn-fanduel-unavailable",
+    },
+    {
+      id: "game-27",
+      homeId: "chi-blackhawks",
+      awayId: "dal-stars",
+      dateTime: daysFromNow(11, 19, 30),
+      venue: "United Center",
+      profile: "nhl-rsn-fanduel-available",
+    },
+    {
+      id: "game-28",
+      homeId: "cin-reds",
+      awayId: "chi-cubs",
+      dateTime: daysFromNow(10, 13, 10),
+      venue: "Great American Ball Park",
+      profile: "mlb-national-espn-plus",
     },
   ]
+
+  return specs.map((s) => staticDemoGame(teams, s))
 }

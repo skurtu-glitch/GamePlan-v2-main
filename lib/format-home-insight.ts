@@ -12,6 +12,7 @@ import {
   classifyRecommendedPlans,
 } from "@/lib/optimizer-engine"
 import { teamsForFollowedIds } from "@/lib/data"
+import { followedTeamsScopePhrase } from "@/lib/followed-teams-copy"
 import {
   getOptimizerPlanById,
   type OptimizerPlan,
@@ -146,6 +147,7 @@ export function buildHomeSuggestedInsight(
     teamsForFollowedIds(userState.followedTeamIds)
       .map((t) => t.name)
       .join(" + ") || "your teams"
+  const followedScope = followedTeamsScopePhrase(userState.followedTeamIds)
   const wowMetricLine = formatHomeWowMetric(live, followedLabel)
   const classified = classifyRecommendedPlans(scope, userState)
   const bestPlan =
@@ -160,9 +162,8 @@ export function buildHomeSuggestedInsight(
   if (fullPlan && hasAllPlanServices(fullPlan, userState)) {
     return withRecommendedPlanPromo(fullPlan, {
       wowMetricLine,
-      headline: "You're at full coverage for both teams",
-      summary:
-        "Your connected services match the Full Coverage catalog plan for Blues + Cardinals (both teams).",
+      headline: `You're at full coverage for ${followedLabel}`,
+      summary: `Your connected services match the Full Coverage catalog plan for ${followedLabel} (${followedScope}).`,
       supportingLine:
         live.totalGames > 0
           ? `${followedLabel}: ${live.gamesWatchable} of ${live.totalGames} games on your in-app schedule are watchable with your services.`
@@ -176,7 +177,7 @@ export function buildHomeSuggestedInsight(
     const ctaHref = bestPlan && classified.bestValuePlanId ? `/plans/${classified.bestValuePlanId}` : "/plans"
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
-      headline: "Add video for Blues + Cardinals",
+      headline: `Add video for ${followedLabel}`,
       summary:
         "You're on audio-only access today. The Plan Optimizer shows the lightest video stacks that turn radio follow-alongs into watches—without jumping straight to full coverage.",
       supportingLine: bestPlan
@@ -212,8 +213,7 @@ export function buildHomeSuggestedInsight(
     return {
       wowMetricLine,
       headline: "Compare bundles for your teams",
-      summary:
-        "Use the Plan Optimizer to rank season-catalog plans by watchable games and monthly cost for both teams.",
+      summary: `Use the Plan Optimizer to rank season-catalog plans by watchable games and monthly cost for ${followedLabel}.`,
       ctaLabel,
       ctaHref: "/plans",
     }
@@ -294,7 +294,7 @@ export function buildHomeSuggestedInsight(
     headline: "Optimize cost vs. coverage with Best Value",
     summary: `“${
       bestPlan.name
-    }” is still the catalog’s Best Value anchor for both teams—worth a pass in the optimizer when you want to weigh swaps across services.`,
+    }” is still the catalog’s Best Value anchor for ${followedLabel}—worth a pass in the optimizer when you want to weigh swaps across services.`,
     ctaLabel,
     ctaHref: `/plans/${bestPlan.id}`,
   })

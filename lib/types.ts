@@ -1,11 +1,16 @@
 export type Sport = "NHL" | "MLB" | "NFL" | "NBA"
 
+/** Pro league for hockey / baseball catalog teams (explicit, not inferred from sport alone). */
+export type League = "NHL" | "MLB"
+
 export interface Team {
   id: string
   name: string
   city: string
   abbreviation: string
   sport: Sport
+  /** Hockey vs baseball league; aligns with {@link sport} for NHL/MLB rows. */
+  league: League
   primaryColor: string
   logo: string
 }

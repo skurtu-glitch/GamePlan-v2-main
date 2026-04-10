@@ -7,14 +7,28 @@ import type { DemoLocation } from "@/lib/demo-user"
 import type { Game } from "@/lib/types"
 
 /** Canonical home-market codes used in blackout heuristics. */
-export type HomeMarketCode = "stl" | "den" | "chi"
+export type HomeMarketCode =
+  | "stl"
+  | "den"
+  | "chi"
+  | "ny"
+  | "dal"
+  | "pit"
+  | "cin"
+  | "mil"
 
 /** Maps team id → home market (see `lib/data` teams). */
 export const TEAM_HOME_MARKET: Readonly<Record<string, HomeMarketCode>> = {
   "stl-blues": "stl",
   "stl-cardinals": "stl",
-  "col-avalanche": "den",
+  "chi-blackhawks": "chi",
   "chi-cubs": "chi",
+  "ny-rangers": "ny",
+  "dal-stars": "dal",
+  "col-avalanche": "den",
+  "pit-pirates": "pit",
+  "cin-reds": "cin",
+  "mil-brewers": "mil",
 }
 
 export function homeMarketsForGame(game: Game): HomeMarketCode[] {
@@ -50,7 +64,16 @@ export function hasMappedHomeTeamMarket(game: Game): boolean {
   return homeTeamMarketCode(game) !== null
 }
 
-const KNOWN_REGION_CODES = new Set<string>(["stl", "den", "chi"])
+const KNOWN_REGION_CODES = new Set<string>([
+  "stl",
+  "den",
+  "chi",
+  "ny",
+  "dal",
+  "pit",
+  "cin",
+  "mil",
+])
 
 /**
  * Resolve user home market from explicit region, ZIP heuristics, or city/state.
@@ -79,6 +102,21 @@ export function resolveUserHomeMarket(location: DemoLocation): HomeMarketCode | 
     ) {
       return "chi"
     }
+    if (
+      prefix3 === "100" ||
+      prefix3 === "101" ||
+      prefix3 === "102" ||
+      prefix3 === "103" ||
+      prefix3 === "104" ||
+      prefix3 === "112" ||
+      prefix3 === "113"
+    ) {
+      return "ny"
+    }
+    if (prefix3 === "752" || prefix3 === "750" || prefix3 === "751") return "dal"
+    if (prefix3 === "152" || prefix3 === "151" || prefix3 === "153") return "pit"
+    if (prefix3 === "452" || prefix3 === "450" || prefix3 === "451") return "cin"
+    if (prefix3 === "532" || prefix3 === "530" || prefix3 === "531") return "mil"
   }
 
   const state = location.state?.trim().toUpperCase() ?? ""
@@ -93,6 +131,16 @@ export function resolveUserHomeMarket(location: DemoLocation): HomeMarketCode | 
   if (state === "IL" && (city.includes("chicago") || city.includes("cook"))) {
     return "chi"
   }
+  if (
+    state === "NY" &&
+    (city.includes("new york") || city.includes("brooklyn") || city.includes("queens"))
+  ) {
+    return "ny"
+  }
+  if (state === "TX" && city.includes("dallas")) return "dal"
+  if (state === "PA" && city.includes("pittsburgh")) return "pit"
+  if (state === "OH" && city.includes("cincinnati")) return "cin"
+  if (state === "WI" && city.includes("milwaukee")) return "mil"
 
   return null
 }

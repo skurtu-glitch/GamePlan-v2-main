@@ -13,6 +13,7 @@ export type AnalyticsPayload = Record<
 
 export type AnalyticsSourceScreen =
   | "home"
+  | "schedule"
   | "game_detail"
   | "watch_stub"
   | "listen_stub"

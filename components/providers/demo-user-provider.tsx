@@ -164,10 +164,15 @@ export function DemoUserProvider({ children }: { children: ReactNode }) {
     const uid = user?.id
     if (!supabase || !uid) return
 
-    let savedClear: ReturnType<typeof setTimeout> | undefined
+    /**
+     * Browser timer ids are numeric. With `@types/node`, `ReturnType<typeof setTimeout>` is
+     * `NodeJS.Timeout`, so we use `number` here to match `window.setTimeout` / `clearTimeout`.
+     */
+    type BrowserTimerId = number
+    let savedClear: BrowserTimerId | undefined
     setCloudSyncStatus("syncing")
 
-    const t = window.setTimeout(() => {
+    const t: BrowserTimerId = window.setTimeout(() => {
       void upsertProfileForUserWithResult(supabase, uid, state).then((r) => {
         if (r.ok) {
           setCloudSyncStatus("saved")

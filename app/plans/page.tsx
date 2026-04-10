@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
+import { followedTeamNamesPlus } from "@/lib/followed-teams-copy"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
@@ -151,8 +152,8 @@ export default function PlansPage() {
             </p>
             {selectedTeam !== "both" && (
               <p className="mt-1 text-[10px] text-muted-foreground/90">
-                Home always summarizes Blues + Cardinals together; this card follows your tab
-                above.
+                Home always summarizes {followedTeamNamesPlus(state.followedTeamIds)} together; this
+                card follows your tab above.
               </p>
             )}
           </div>

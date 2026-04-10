@@ -20,6 +20,11 @@ const PROFILES: Record<BroadcastProfileId, WatchMapping> = {
     provider: PROVIDER_LABEL.ESPN_PLUS,
     providers: ["espn-plus"],
   },
+  "mlb-national-espn-plus": {
+    status: "available",
+    provider: PROVIDER_LABEL.ESPN_PLUS,
+    providers: ["espn-plus"],
+  },
   "mlb-rsn-fanduel-unavailable": {
     status: "unavailable",
     provider: PROVIDER_LABEL.FANDUEL_RSN,
@@ -37,6 +42,12 @@ const PROFILES: Record<BroadcastProfileId, WatchMapping> = {
     providers: ["mlb-tv"],
     note: "Out-of-market only",
   },
+  "nhl-oom-nhl-tv": {
+    status: "partial",
+    provider: PROVIDER_LABEL.NHL_TV,
+    providers: ["nhl-tv"],
+    note: "Out-of-market only",
+  },
   "nhl-rsn-fanduel-available": {
     status: "available",
     provider: PROVIDER_LABEL.FANDUEL_RSN,
@@ -48,21 +59,27 @@ export function watchMappingForProfile(profile: BroadcastProfileId): WatchMappin
   return PROFILES[profile]
 }
 
+/** Demo listen label by team id (home/away priority: first match wins). */
+const DEMO_LISTEN_LABEL_BY_TEAM_ID: Record<string, string> = {
+  "stl-blues": LISTEN_FEED.BLUES_AM,
+  "stl-cardinals": LISTEN_FEED.CARDINALS_AM,
+  "col-avalanche": "Altitude Radio",
+  "chi-cubs": "670 The Score",
+  "chi-blackhawks": "Blackhawks Audio Network",
+  "ny-rangers": "Rangers Radio",
+  "dal-stars": "Stars Radio",
+  "pit-pirates": "Pirates Radio",
+  "cin-reds": "Reds Radio",
+  "mil-brewers": "Brewers Radio",
+}
+
 /**
- * Listen feed label (not a subscription id) — matches legacy demo rows (STL teams keep flagship feeds).
+ * Listen feed label (not a subscription id) — catalog-driven; STL flagship feeds preserved for Blues/Cardinals.
  */
 export function listenLabelForGame(homeTeamId: string, awayTeamId: string): string {
-  if (homeTeamId === "stl-blues" || awayTeamId === "stl-blues") {
-    return LISTEN_FEED.BLUES_AM
-  }
-  if (homeTeamId === "stl-cardinals" || awayTeamId === "stl-cardinals") {
-    return LISTEN_FEED.CARDINALS_AM
-  }
-  if (homeTeamId === "col-avalanche" || awayTeamId === "col-avalanche") {
-    return "Altitude Radio"
-  }
-  if (homeTeamId === "chi-cubs" || awayTeamId === "chi-cubs") {
-    return "670 The Score"
+  for (const id of [homeTeamId, awayTeamId]) {
+    const label = DEMO_LISTEN_LABEL_BY_TEAM_ID[id]
+    if (label) return label
   }
   return "Team radio"
 }

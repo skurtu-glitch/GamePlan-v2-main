@@ -14,7 +14,7 @@ export interface DemoLocation {
   /** Optional ZIP (used for coarse home-market inference when `regionCode` is unset). */
   zipCode?: string
   /**
-   * Explicit home market for blackout rules: `stl` | `den` | `chi` (see `lib/market-regions.ts`).
+   * Explicit home market for blackout rules (see `lib/market-regions.ts` `HomeMarketCode`).
    * When set, overrides ZIP/city inference.
    */
   regionCode?: string

@@ -24,6 +24,8 @@ export type ScheduleValidationResult =
 
 export interface ValidateScheduleIngestOptions {
   allowedTeamIds: readonly string[]
+  /** When set, each event’s `league` must match both teams’ catalog `league`. */
+  teamLeagueById?: ReadonlyMap<string, "NHL" | "MLB">
 }
 
 function push(
@@ -149,6 +151,29 @@ export function validateScheduleIngest(
       homeTeamId.trim() === awayTeamId.trim()
     ) {
       push(errors, `${base}.teams`, "teams_distinct", "homeTeamId and awayTeamId must differ")
+    }
+
+    const leagueStr = typeof league === "string" ? league.trim() : ""
+    const map = options.teamLeagueById
+    if (
+      map &&
+      LEAGUES.has(leagueStr) &&
+      isNonEmptyString(homeTeamId) &&
+      isNonEmptyString(awayTeamId)
+    ) {
+      const L = leagueStr as "NHL" | "MLB"
+      for (const tid of [String(homeTeamId).trim(), String(awayTeamId).trim()]) {
+        const cat = map.get(tid)
+        if (cat !== undefined && cat !== L) {
+          push(
+            errors,
+            `${base}.league`,
+            "league_team_mismatch",
+            `league ${L} does not match catalog league for team ${tid}`
+          )
+          break
+        }
+      }
     }
 
     const dayOffset = e.dayOffset

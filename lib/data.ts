@@ -1,4 +1,4 @@
-import type { Team, StreamingPlan } from "./types"
+import type { League, Team, StreamingPlan } from "./types"
 import { DEFAULT_FOLLOWED_TEAM_IDS } from "./demo-user"
 import { PROVIDER_LABEL, serviceDisplayName } from "./streaming-service-ids"
 import { bindDemoSchedule } from "./data-sources/games"
@@ -10,17 +10,39 @@ export const teams: Team[] = [
     city: "St. Louis",
     abbreviation: "STL",
     sport: "NHL",
+    league: "NHL",
     primaryColor: "#002F87",
     logo: "/teams/blues.svg",
   },
   {
-    id: "stl-cardinals",
-    name: "Cardinals",
-    city: "St. Louis",
-    abbreviation: "STL",
-    sport: "MLB",
-    primaryColor: "#C41E3A",
-    logo: "/teams/cardinals.svg",
+    id: "chi-blackhawks",
+    name: "Blackhawks",
+    city: "Chicago",
+    abbreviation: "CHI",
+    sport: "NHL",
+    league: "NHL",
+    primaryColor: "#CF0A2C",
+    logo: "/teams/chi-blackhawks.svg",
+  },
+  {
+    id: "ny-rangers",
+    name: "Rangers",
+    city: "New York",
+    abbreviation: "NYR",
+    sport: "NHL",
+    league: "NHL",
+    primaryColor: "#0038A8",
+    logo: "/teams/ny-rangers.svg",
+  },
+  {
+    id: "dal-stars",
+    name: "Stars",
+    city: "Dallas",
+    abbreviation: "DAL",
+    sport: "NHL",
+    league: "NHL",
+    primaryColor: "#00843D",
+    logo: "/teams/dal-stars.svg",
   },
   {
     id: "col-avalanche",
@@ -28,8 +50,19 @@ export const teams: Team[] = [
     city: "Colorado",
     abbreviation: "COL",
     sport: "NHL",
+    league: "NHL",
     primaryColor: "#6F263D",
     logo: "/teams/avalanche.svg",
+  },
+  {
+    id: "stl-cardinals",
+    name: "Cardinals",
+    city: "St. Louis",
+    abbreviation: "STL",
+    sport: "MLB",
+    league: "MLB",
+    primaryColor: "#C41E3A",
+    logo: "/teams/cardinals.svg",
   },
   {
     id: "chi-cubs",
@@ -37,10 +70,48 @@ export const teams: Team[] = [
     city: "Chicago",
     abbreviation: "CHC",
     sport: "MLB",
+    league: "MLB",
     primaryColor: "#0E3386",
     logo: "/teams/cubs.svg",
   },
+  {
+    id: "pit-pirates",
+    name: "Pirates",
+    city: "Pittsburgh",
+    abbreviation: "PIT",
+    sport: "MLB",
+    league: "MLB",
+    primaryColor: "#27251F",
+    logo: "/teams/pit-pirates.svg",
+  },
+  {
+    id: "cin-reds",
+    name: "Reds",
+    city: "Cincinnati",
+    abbreviation: "CIN",
+    sport: "MLB",
+    league: "MLB",
+    primaryColor: "#C6011F",
+    logo: "/teams/cin-reds.svg",
+  },
+  {
+    id: "mil-brewers",
+    name: "Brewers",
+    city: "Milwaukee",
+    abbreviation: "MIL",
+    sport: "MLB",
+    league: "MLB",
+    primaryColor: "#132448",
+    logo: "/teams/mil-brewers.svg",
+  },
 ]
+
+/** Leagues in the catalog (add-team flow). */
+export const CATALOG_LEAGUES: readonly League[] = ["NHL", "MLB"]
+
+export function catalogTeamsInLeague(league: League): Team[] {
+  return teams.filter((t) => t.league === league)
+}
 
 /** Map catalog ids to `Team` rows; unknown ids skipped. Preserves `ids` order. */
 export function teamsForFollowedIds(ids: readonly string[]): Team[] {

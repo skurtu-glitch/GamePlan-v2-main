@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
+import { AddTeamDialog } from "@/components/add-team-dialog"
 import { BottomNav } from "@/components/bottom-nav"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
@@ -19,7 +20,6 @@ import {
   Tv,
   Radio,
   UserMinus,
-  UserPlus,
 } from "lucide-react"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 
@@ -37,6 +37,7 @@ function nextUpcomingGameForTeam(teamId: string, now: Date) {
 
 export default function TeamsPage() {
   const [mounted, setMounted] = useState(false)
+  const [addTeamOpen, setAddTeamOpen] = useState(false)
   const { isHydrating: isScheduleHydrating } = useSchedule()
   const { state, setDemoUserState } = useDemoUser()
   const userTeams = teamsForFollowedIds(state.followedTeamIds)
@@ -45,6 +46,7 @@ export default function TeamsPage() {
     () => teams.filter((t) => !state.followedTeamIds.includes(t.id)),
     [state.followedTeamIds]
   )
+  const canAddFromCatalog = otherTeams.length > 0
 
   function toggleFollow(teamId: string, follow: boolean) {
     setDemoUserState((prev) => {
@@ -150,9 +152,7 @@ export default function TeamsPage() {
                         <h3 className="text-lg font-semibold text-foreground">
                           {team.name}
                         </h3>
-                        <p className="text-sm text-muted-foreground">
-                          {team.sport === "NHL" ? "NHL" : team.sport}
-                        </p>
+                        <p className="text-sm text-muted-foreground">{team.league}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-2xl font-bold text-emerald-400">
@@ -297,46 +297,35 @@ export default function TeamsPage() {
           )}
         </section>
 
-        {/* Follow more from catalog */}
+        {/* Add team — league-first flow */}
         <section>
           <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            More teams
+            Add a team
           </h2>
-          {otherTeams.length === 0 ? (
+          {canAddFromCatalog ? (
+            <>
+              <p className="mb-3 text-sm text-muted-foreground">
+                Pick a league, then choose a team from the catalog. Your follows sync when
+                you&apos;re signed in.
+              </p>
+              <Button
+                type="button"
+                className="w-full"
+                onClick={() => setAddTeamOpen(true)}
+              >
+                Add a team
+              </Button>
+              <AddTeamDialog
+                open={addTeamOpen}
+                onOpenChange={setAddTeamOpen}
+                followedTeamIds={state.followedTeamIds}
+                onFollowTeam={(id) => toggleFollow(id, true)}
+              />
+            </>
+          ) : (
             <p className="text-sm text-muted-foreground">
               You&apos;re following every team in the catalog.
             </p>
-          ) : (
-            <Card className="overflow-hidden divide-y divide-border p-0">
-              {otherTeams.map((team) => (
-                <div
-                  key={team.id}
-                  className="flex items-center gap-4 p-4"
-                >
-                  <div
-                    className="flex size-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
-                    style={{ backgroundColor: team.primaryColor }}
-                  >
-                    {team.abbreviation}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="font-semibold text-foreground">{team.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {team.city} · {team.sport}
-                    </p>
-                  </div>
-                  <Button
-                    type="button"
-                    size="sm"
-                    className="shrink-0 gap-1.5"
-                    onClick={() => toggleFollow(team.id, true)}
-                  >
-                    <UserPlus className="size-4" />
-                    Follow
-                  </Button>
-                </div>
-              ))}
-            </Card>
           )}
         </section>
       </main>

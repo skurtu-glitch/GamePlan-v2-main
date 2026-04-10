@@ -9,6 +9,7 @@ import {
   listenLabelForGame,
   watchMappingForProfile,
 } from "@/lib/data-sources/rights/provider-map"
+import type { BroadcastProfileId } from "@/lib/data-sources/schedule/types"
 import type { NormalizedPipelineGame } from "@/lib/data-normalization/normalize-schedule"
 
 function recommendationFor(watchStatus: Game["watch"]["status"]): Game["recommendation"] {
@@ -17,8 +18,15 @@ function recommendationFor(watchStatus: Game["watch"]["status"]): Game["recommen
   return "Just Listen"
 }
 
-function optionalAccessBlock(row: NormalizedPipelineGame): Game["access"] | undefined {
-  if (row.broadcastProfile === "nhl-national-espn-plus") {
+/**
+ * Curated `access` blocks for profiles where demo UX expects explicit actions (national ESPN+, RSN gaps).
+ * Exported for static demo fallback parity with ingest.
+ */
+export function optionalAccessForProfile(
+  profile: BroadcastProfileId,
+  listenLabel: string
+): Game["access"] | undefined {
+  if (profile === "nhl-national-espn-plus" || profile === "mlb-national-espn-plus") {
     return {
       status: "watchable",
       reason: `Available on ${PROVIDER_LABEL.ESPN_PLUS} with your subscription`,
@@ -29,9 +37,9 @@ function optionalAccessBlock(row: NormalizedPipelineGame): Game["access"] | unde
           provider: PROVIDER_LABEL.ESPN_PLUS,
         },
         {
-          label: `Listen on ${LISTEN_FEED.BLUES_AM}`,
+          label: `Listen on ${listenLabel}`,
           type: "open",
-          provider: LISTEN_FEED.BLUES_AM,
+          provider: listenLabel,
         },
       ],
       bestOption: {
@@ -45,7 +53,7 @@ function optionalAccessBlock(row: NormalizedPipelineGame): Game["access"] | unde
     }
   }
 
-  if (row.broadcastProfile === "mlb-rsn-fanduel-unavailable") {
+  if (profile === "mlb-rsn-fanduel-unavailable") {
     return {
       status: "unavailable",
       reason: `Your plan doesn't include ${PROVIDER_LABEL.FANDUEL_RSN}`,
@@ -57,9 +65,9 @@ function optionalAccessBlock(row: NormalizedPipelineGame): Game["access"] | unde
           price: "$19.99/mo",
         },
         {
-          label: `Listen free on ${LISTEN_FEED.CARDINALS_AM}`,
+          label: `Listen free on ${listenLabel}`,
           type: "open",
-          provider: LISTEN_FEED.CARDINALS_AM,
+          provider: listenLabel,
         },
       ],
       bestOption: {
@@ -114,7 +122,7 @@ export function composeEngineGamesFromNormalized(
       ...(row.venue ? { venue: row.venue } : {}),
     }
 
-    const access = optionalAccessBlock(row)
+    const access = optionalAccessForProfile(row.broadcastProfile, listenLabel)
     if (access) game.access = access
 
     return game

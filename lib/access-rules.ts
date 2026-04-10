@@ -16,7 +16,7 @@ import { demoMonthlyPriceUsd, serviceDisplayName } from "@/lib/streaming-service
 export const ACCESS_RULES_SEE_PLANS = "See Plans"
 
 /** League / national-style streaming SKUs in the demo catalog. */
-const NATIONAL_VIDEO_SERVICES = new Set<string>(["espn-plus", "max", "mlb-tv"])
+const NATIONAL_VIDEO_SERVICES = new Set<string>(["espn-plus", "max", "mlb-tv", "nhl-tv"])
 
 /** Pure RSN-style SKUs (local rights emphasis). */
 const REGIONAL_VIDEO_SERVICES = new Set<string>(["fanduel-sports"])

@@ -6,7 +6,10 @@
 import type { Team } from "@/lib/types"
 import { composeEngineGamesFromNormalized } from "@/lib/data-normalization/compose-engine-games"
 import { normalizeScheduleIngest } from "@/lib/data-normalization/normalize-schedule"
-import type { ScheduleValidationError } from "@/lib/data-validation/validate-schedule-ingest"
+import type {
+  ScheduleValidationError,
+  ScheduleValidationResult,
+} from "@/lib/data-validation/validate-schedule-ingest"
 import { validateScheduleIngest } from "@/lib/data-validation/validate-schedule-ingest"
 import {
   applyEngineScheduleFromPipeline,
@@ -41,6 +44,7 @@ function teamCtx(teams: Team[]) {
   return {
     teamById: new Map(teams.map((t) => [t.id, t])),
     teamIds: teams.map((t) => t.id),
+    teamLeagueById: new Map(teams.map((t) => [t.id, t.league])),
   }
 }
 
@@ -83,10 +87,10 @@ async function fetchRemotePayload(
   | { ok: true; payload: ScheduleIngestPayload; url: string }
   | { ok: false; errors: ScheduleValidationError[] }
 > {
-  const { teamIds } = teamCtx(teams)
+  const { teamIds, teamLeagueById } = teamCtx(teams)
   try {
     const raw = await getOrFetchRemoteScheduleJson(url, force)
-    const v = validateScheduleIngest(raw, { allowedTeamIds: teamIds })
+    const v = validateScheduleIngest(raw, { allowedTeamIds: teamIds, teamLeagueById })
     if (!v.ok) return { ok: false, errors: v.errors }
     return { ok: true, payload: v.payload, url }
   } catch (e) {
@@ -103,18 +107,30 @@ async function fetchRemotePayload(
   }
 }
 
-function loadCommitted(teams: Team[]) {
-  const { teamIds } = teamCtx(teams)
-  return validateScheduleIngest(defaultIngest as unknown, { allowedTeamIds: teamIds })
+function loadCommitted(teams: Team[]): ScheduleValidationResult {
+  const { teamIds, teamLeagueById } = teamCtx(teams)
+  return validateScheduleIngest(defaultIngest as unknown, {
+    allowedTeamIds: teamIds,
+    teamLeagueById,
+  })
 }
 
-function loadLkg(teams: Team[]) {
+/** Validated last-known-good envelope + payload, or `null` when missing or invalid. */
+type LastKnownGoodScheduleLoad = {
+  envelope: ScheduleLkgEnvelope
+  payload: ScheduleIngestPayload
+}
+
+function loadLkg(teams: Team[]): LastKnownGoodScheduleLoad | null {
   const env = readScheduleLkgEnvelope()
-  if (!env) return null as const
-  const { teamIds } = teamCtx(teams)
-  const v = validateScheduleIngest(env.payload as unknown, { allowedTeamIds: teamIds })
-  if (!v.ok) return null as const
-  return { envelope: env, payload: v.payload } as const
+  if (!env) return null
+  const { teamIds, teamLeagueById } = teamCtx(teams)
+  const v = validateScheduleIngest(env.payload as unknown, {
+    allowedTeamIds: teamIds,
+    teamLeagueById,
+  })
+  if (!v.ok) return null
+  return { envelope: env, payload: v.payload }
 }
 
 export interface ServerHydrationResult {

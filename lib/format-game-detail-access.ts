@@ -4,7 +4,7 @@ import {
   missingVideoProviders,
   videoProviderIdsViableForLocation,
 } from "@/lib/access-rules"
-import { userTeams } from "@/lib/data"
+import { teamsForFollowedIds } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import type { Game, WatchOption } from "@/lib/types"
 import {
@@ -201,13 +201,13 @@ function buildBestOption(
   }
 }
 
-function userFollowedTeamIdSet(): Set<string> {
-  return new Set(userTeams.map((t) => t.id))
+function followedTeamIdSet(userState: DemoUserState): Set<string> {
+  return new Set(teamsForFollowedIds(userState.followedTeamIds).map((t) => t.id))
 }
 
-function buildConversionHook(game: Game, now: Date): string {
+function buildConversionHook(game: Game, userState: DemoUserState, now: Date): string {
   if (isGameWithinHours(game.dateTime, URGENCY_HOURS, now)) {
-    return missTonightUrgencyLine(urgencyTeamLabel(game, userFollowedTeamIdSet()))
+    return missTonightUrgencyLine(urgencyTeamLabel(game, followedTeamIdSet(userState)))
   }
   return seasonUnlockBanner()
 }
@@ -264,6 +264,6 @@ export function formatGameDetailAccess(
     watchVerdict: buildWatchVerdict(game, resolved, userState),
     watchOptions: buildWatchOptions(game, userState, resolved),
     whyThisAnswer: buildWhyThisAnswer(game, resolved, userState),
-    conversionHook: buildConversionHook(game, now),
+    conversionHook: buildConversionHook(game, userState, now),
   }
 }

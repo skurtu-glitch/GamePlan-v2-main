@@ -12,17 +12,21 @@ export interface ScheduleIngestMeta {
 /** Maps to managed rights profiles in `provider-map.ts`. */
 export type BroadcastProfileId =
   | "nhl-national-espn-plus"
+  | "mlb-national-espn-plus"
   | "mlb-rsn-fanduel-unavailable"
   | "nhl-national-max"
   | "mlb-oom-mlb-tv"
+  | "nhl-oom-nhl-tv"
   | "nhl-rsn-fanduel-available"
 
 /** All known ingest `broadcastProfile` ids (validation + mapping). */
 export const SCHEDULE_BROADCAST_PROFILE_IDS: readonly BroadcastProfileId[] = [
   "nhl-national-espn-plus",
+  "mlb-national-espn-plus",
   "mlb-rsn-fanduel-unavailable",
   "nhl-national-max",
   "mlb-oom-mlb-tv",
+  "nhl-oom-nhl-tv",
   "nhl-rsn-fanduel-available",
 ] as const
 

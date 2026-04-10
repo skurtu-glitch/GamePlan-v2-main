@@ -273,6 +273,8 @@ export interface PlanBundlePromoSummary {
   withOffersLine?: string
   /** “Estimated savings: ~$Z/mo” */
   savingsLine?: string
+  /** Trial / intro narrative instead of savings-only (e.g. intro → then list). */
+  promoReframeLine?: string
   attributionLine?: string
   freshnessLine?: string
 }
@@ -330,6 +332,9 @@ export function getPlanBundlePromoSummary(
 
   const introPeriodMonths = Math.max(maxIntroMonths, 12)
   const uniqFresh = [...new Set(freshness)]
+  const promoReframeLine = `Try intro bundle pricing ~$${combinedIntro.toFixed(
+    2
+  )}/mo avg for ${introPeriodMonths} months → then $${baseMonthlyUsd.toFixed(2)}/mo list`
 
   return {
     baseMonthlyUsd,
@@ -339,6 +344,7 @@ export function getPlanBundlePromoSummary(
     savingsVsBaseMonthlyUsd: savings,
     withOffersLine: `With current offers: ~$${combinedIntro.toFixed(2)}/mo for first ${introPeriodMonths} months`,
     savingsLine: `Estimated savings: ~$${savings.toFixed(2)}/mo`,
+    promoReframeLine,
     attributionLine: "Based on current offers",
     freshnessLine: uniqFresh[0],
   }

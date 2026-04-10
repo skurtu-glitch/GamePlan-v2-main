@@ -38,6 +38,12 @@ export const AnalyticsEvent = {
   assistantSuggestedPromptClick: "assistant_suggested_prompt_click",
   watchActionClick: "watch_action_click",
   listenActionClick: "listen_action_click",
+  /** Assistant / monetized cards: decision block rendered. */
+  decisionShown: "decision_shown",
+  /** Primary outcome CTA tap (any screen using shared conversion layer). */
+  ctaPrimaryClick: "cta_primary_click",
+  /** Secondary CTA tap (e.g. Review details → /plans). */
+  ctaSecondaryClick: "cta_secondary_click",
 } as const
 
 function isAnalyticsDebug(): boolean {
@@ -102,7 +108,12 @@ export function analyticsBase(
   }
 }
 
-/** Call when navigating to an external URL that may be affiliate / partner (utm_ref, etc.). */
+/**
+ * Outbound partner / affiliate taps. Prefer passing:
+ * - `service_id` — streaming entitlement key (e.g. espn-plus)
+ * - `plan_id` — optimizer plan id when the click is plan-scoped
+ * - `intent` — short funnel label (e.g. assistant_plan, plans_start_plan)
+ */
 export function trackAffiliateClick(
   url: string,
   sourceScreen: AnalyticsSourceScreen,

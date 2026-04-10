@@ -8,13 +8,41 @@ import type {
   PlanQuestionAnswer,
   WatchQuestionAnswer,
 } from "@/lib/assistant-engine"
+import { userTeams, getEngineGames } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import {
   calculateIncrementalPlanValue,
   getCurrentCoverageBaseline,
 } from "@/lib/optimizer-engine"
-import { getOptimizerPlanById, type OptimizerScope } from "@/lib/optimizer-plans"
+import {
+  getAffiliateLink,
+  hasAffiliateLanding,
+  primaryAffiliateServiceIdForPlan,
+  resolvePrimaryVideoServiceIdForGame,
+} from "@/lib/affiliate"
+import {
+  getOptimizerPlanById,
+  type OptimizerPlan,
+  type OptimizerScope,
+} from "@/lib/optimizer-plans"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
+import {
+  chooseMonetizedPrimaryLabel,
+  isGameWithinHours,
+  labelGetBestValuePlan,
+  labelReviewDetails,
+  labelSeeHomeSchedule,
+  labelUnlockMoreGames,
+  labelWatchTonightsGame,
+  missTonightUrgencyLine,
+  seasonUnlockBanner,
+  socialProofMostFans,
+  socialProofRecommended,
+  URGENCY_HOURS,
+  urgencyTeamLabel,
+  valueJustificationBestValue,
+  valueJustificationCheapest,
+} from "@/lib/conversion-copy"
 
 const MAX_WHY = 2
 
@@ -81,9 +109,30 @@ function stripWatchOnPrefix(label: string): string {
   return label.replace(/^\s*watch\s+on\s+/i, "").trim() || label
 }
 
+function userTeamIdSet(): Set<string> {
+  return new Set(userTeams.map((t) => t.id))
+}
+
+function watchGameUrgency(
+  gameId: string | undefined,
+  now = new Date()
+): { within24h: boolean; line: string | null } {
+  if (!gameId) return { within24h: false, line: null }
+  const game = getEngineGames().find((g) => g.id === gameId)
+  if (!game) return { within24h: false, line: null }
+  const within = isGameWithinHours(game.dateTime, URGENCY_HOURS, now)
+  if (within) {
+    return {
+      within24h: true,
+      line: missTonightUrgencyLine(urgencyTeamLabel(game, userTeamIdSet())),
+    }
+  }
+  return { within24h: false, line: null }
+}
+
 export function formatAssistantDecision(
   input:
-    | { kind: "watch"; payload: WatchQuestionAnswer }
+    | { kind: "watch"; payload: WatchQuestionAnswer; gameId?: string }
     | {
         kind: "plan"
         payload: PlanQuestionAnswer
@@ -99,6 +148,10 @@ export function formatAssistantDecision(
 
   if (input.kind === "watch") {
     const p = input.payload
+    const { within24h, line: urgencyLine } = watchGameUrgency(
+      input.gameId,
+      new Date()
+    )
     if (p.headline === "Game not found") {
       return p.headline
     }
@@ -106,11 +159,16 @@ export function formatAssistantDecision(
       const feeds = parsePrefixedLine(p.reasons, "Feeds: ")
       const video = parsePrefixedLine(p.reasons, "Video: ")
       const via = firstListItem(feeds) ?? (video ? stripWatchOnPrefix(video) : null)
-      return via
+      const core = via
         ? `You can watch this on ${via}.`
         : "You can watch this with your current setup."
+      if (urgencyLine) return `${urgencyLine}\n\n${core}`
+      return core
     }
-    return "You can’t watch this with your current setup."
+    const core = "You can’t watch this with your current setup."
+    if (urgencyLine) return `${urgencyLine}\n\n${core}`
+    if (!within24h) return `${seasonUnlockBanner()} — ${core}`
+    return core
   }
 
   if (input.kind === "plan") {
@@ -370,17 +428,47 @@ export function formatAssistantWhy(
   return dedupeWhy(filterWhyVsDecision(decisionText, out)).slice(0, MAX_WHY)
 }
 
+export interface AffiliateClickMeta {
+  serviceId: string
+  planId?: string
+  intent: string
+}
+
 export interface FormattedAssistantAction {
   label: string
   href?: string
+  /** Present when `href` is an outbound affiliate URL (analytics). */
+  affiliate?: AffiliateClickMeta
 }
 
 export interface FormattedAssistantNextAction {
   primary: FormattedAssistantAction
   secondary?: FormattedAssistantAction
+  valueJustification?: string
+  socialProof?: string
 }
 
-function topIncrementalServiceLabel(
+function valueAndSocialForPlan(plan: OptimizerPlan | undefined): {
+  value: string
+  social: string
+} {
+  const value =
+    plan?.tier === "cheapest"
+      ? valueJustificationCheapest()
+      : valueJustificationBestValue()
+  const social =
+    plan?.tier === "value" || plan?.name === "Best Value"
+      ? socialProofMostFans()
+      : socialProofRecommended()
+  return { value, social }
+}
+
+const WATCH_VALUE_SOCIAL = {
+  value: valueJustificationBestValue(),
+  social: socialProofRecommended(),
+} as const
+
+function topIncrementalServiceId(
   payload: MissingGamesAnswer,
   userState: DemoUserState
 ): string | null {
@@ -393,13 +481,26 @@ function topIncrementalServiceLabel(
     userState
   )
   const sid = inc.incrementalServices[0]
+  return sid ?? null
+}
+
+function topIncrementalServiceLabel(
+  payload: MissingGamesAnswer,
+  userState: DemoUserState
+): string | null {
+  const sid = topIncrementalServiceId(payload, userState)
   return sid ? serviceDisplayName(sid) : null
 }
 
 export function formatAssistantNextAction(
   input:
-    | { kind: "watch"; payload: WatchQuestionAnswer }
-    | { kind: "plan"; payload: PlanQuestionAnswer }
+    | { kind: "watch"; payload: WatchQuestionAnswer; gameId?: string }
+    | {
+        kind: "plan"
+        payload: PlanQuestionAnswer
+        scope: OptimizerScope
+        userState: DemoUserState
+      }
     | { kind: "missing"; payload: MissingGamesAnswer; userState: DemoUserState }
     | { kind: "fallback" }
 ): FormattedAssistantNextAction {
@@ -409,66 +510,210 @@ export function formatAssistantNextAction(
 
   if (input.kind === "watch") {
     const p = input.payload
+    const gid = input.gameId
+    const { within24h } = watchGameUrgency(gid, new Date())
     if (p.headline === "Game not found") {
-      return { primary: { ...p.primaryAction } }
+      return {
+        primary: { ...p.primaryAction },
+        valueJustification: WATCH_VALUE_SOCIAL.value,
+        socialProof: WATCH_VALUE_SOCIAL.social,
+      }
     }
 
     if (p.status === "watchable") {
       return {
-        primary: { label: "Open game", href: p.primaryAction.href },
-        secondary: p.secondaryAction?.href
-          ? { label: "Add another service", href: p.secondaryAction.href }
-          : undefined,
+        primary: {
+          label: within24h ? labelWatchTonightsGame() : "Open your stream",
+          href: p.primaryAction.href,
+        },
+        secondary: {
+          label: labelReviewDetails(),
+          href: "/plans",
+        },
+        valueJustification: WATCH_VALUE_SOCIAL.value,
+        socialProof: WATCH_VALUE_SOCIAL.social,
       }
     }
 
+    const videoSid = gid ? resolvePrimaryVideoServiceIdForGame(gid) : undefined
+    const { value, social } = valueAndSocialForPlan(undefined)
+
     if (p.status === "listen-only") {
+      const affiliatePrimary =
+        videoSid && hasAffiliateLanding(videoSid)
+          ? {
+              label: chooseMonetizedPrimaryLabel({
+                within24h,
+                planName: "",
+              }),
+              href: getAffiliateLink(videoSid, {
+                sourceScreen: "assistant",
+                intent: "assistant_watch_listen_only",
+              }),
+              affiliate: {
+                serviceId: videoSid,
+                intent: "assistant_watch_listen_only",
+              },
+            }
+          : null
+
+      if (affiliatePrimary) {
+        return {
+          primary: affiliatePrimary,
+          secondary: {
+            label: "Listen free now",
+            href: p.primaryAction.href,
+          },
+          valueJustification: value,
+          socialProof: social,
+        }
+      }
+
       return {
-        primary: { label: "Listen live", href: p.primaryAction.href },
-        secondary: p.secondaryAction?.href
-          ? { label: "Add a service to unlock video", href: p.secondaryAction.href }
-          : undefined,
+        primary: { label: "Listen free now", href: p.primaryAction.href },
+        secondary: {
+          label: labelReviewDetails(),
+          href: "/plans",
+        },
+        valueJustification: value,
+        socialProof: social,
+      }
+    }
+
+    if (videoSid && hasAffiliateLanding(videoSid)) {
+      return {
+        primary: {
+          label: chooseMonetizedPrimaryLabel({
+            within24h,
+            planName: "",
+          }),
+          href: getAffiliateLink(videoSid, {
+            sourceScreen: "assistant",
+            intent: "assistant_watch_not_available",
+          }),
+          affiliate: {
+            serviceId: videoSid,
+            intent: "assistant_watch_not_available",
+          },
+        },
+        secondary: {
+          label: labelReviewDetails(),
+          href: "/plans",
+        },
+        valueJustification: value,
+        socialProof: social,
       }
     }
 
     return {
-      primary: { label: "Unlock more games", href: p.primaryAction.href },
-      secondary: p.secondaryAction?.href
-        ? { label: "Add a service", href: p.secondaryAction.href }
-        : undefined,
+      primary: { label: labelUnlockMoreGames(), href: p.primaryAction.href },
+      secondary: {
+        label: labelReviewDetails(),
+        href: "/plans",
+      },
+      valueJustification: value,
+      socialProof: social,
     }
   }
 
   if (input.kind === "plan") {
+    const { payload, scope, userState } = input
+    const bestId = payload.recommendations.bestValuePlanId
+    const best = bestId ? getOptimizerPlanById(bestId) : undefined
+    const lead = best ? primaryAffiliateServiceIdForPlan(best) : undefined
+    const { value, social } = valueAndSocialForPlan(best ?? undefined)
+    if (lead && hasAffiliateLanding(lead)) {
+      return {
+        primary: {
+          label: chooseMonetizedPrimaryLabel({
+            within24h: false,
+            planName: best?.name ?? "",
+          }),
+          href: getAffiliateLink(lead, {
+            sourceScreen: "assistant",
+            intent: "assistant_plan",
+            planId: best?.id,
+          }),
+          affiliate: {
+            serviceId: lead,
+            planId: best?.id,
+            intent: "assistant_plan",
+          },
+        },
+        secondary: {
+          label: labelReviewDetails(),
+          href: "/plans",
+        },
+        valueJustification: value,
+        socialProof: social,
+      }
+    }
     return {
       primary: {
-        label: "Review details in Plan Optimizer",
+        label: labelReviewDetails(),
         href: "/plans",
       },
+      valueJustification: value,
+      socialProof: social,
     }
   }
 
   const p = input.payload
   const svc = topIncrementalServiceLabel(p, input.userState)
+  const svcId = topIncrementalServiceId(p, input.userState)
+  const planEntity =
+    p.upgradeHint.planId != null
+      ? getOptimizerPlanById(p.upgradeHint.planId)
+      : undefined
+
+  const { value, social } = valueAndSocialForPlan(planEntity ?? undefined)
+
   const upgradeLabel =
     p.upgradeHint.planName === "Best Value"
-      ? "Upgrade to Best Value"
-      : p.upgradeHint.planName
-        ? `Unlock more games with ${p.upgradeHint.planName}`
-        : "Unlock more games"
+      ? labelGetBestValuePlan()
+      : labelUnlockMoreGames()
+
+  if (p.missingGames.length > 0 && svcId && hasAffiliateLanding(svcId)) {
+    return {
+      primary: {
+        label: chooseMonetizedPrimaryLabel({
+          within24h: false,
+          planName: p.upgradeHint.planName ?? planEntity?.name ?? "",
+        }),
+        href: getAffiliateLink(svcId, {
+          sourceScreen: "assistant",
+          intent: "assistant_missing",
+          planId: planEntity?.id,
+        }),
+        affiliate: {
+          serviceId: svcId,
+          planId: planEntity?.id,
+          intent: "assistant_missing",
+        },
+      },
+      secondary: {
+        label: labelReviewDetails(),
+        href: "/plans",
+      },
+      valueJustification: value,
+      socialProof: social,
+    }
+  }
 
   return {
     primary: {
-      label: p.missingGames.length > 0 ? upgradeLabel : "View schedule",
+      label: p.missingGames.length > 0 ? upgradeLabel : labelSeeHomeSchedule(),
       href: p.primaryAction.href,
     },
     secondary:
-      p.missingGames.length > 0 && p.secondaryAction?.href
+      p.missingGames.length > 0
         ? {
-            label: svc ? `Add ${svc}` : "Add a service",
-            href: p.secondaryAction.href,
+            label: labelReviewDetails(),
+            href: "/plans",
           }
         : undefined,
+    valueJustification: value,
+    socialProof: social,
   }
 }
 

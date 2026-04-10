@@ -17,6 +17,17 @@ import {
   analyticsBase,
   trackEvent,
 } from "@/lib/analytics"
+import {
+  isGameWithinHours,
+  labelFixMyCoverage,
+  labelReviewDetails,
+  missTonightUrgencyLine,
+  seasonUnlockBanner,
+  socialProofRecommended,
+  urgencyTeamLabel,
+  URGENCY_HOURS,
+  valueJustificationBestValue,
+} from "@/lib/conversion-copy"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -79,28 +90,53 @@ function SuggestedForYouCard({
   content,
   demoState,
   recommendedPlanId,
+  conversionBanner,
 }: {
   content: HomeInsightCardContent
   demoState: DemoUserState
   recommendedPlanId: string | null
+  conversionBanner: string
 }) {
+  useEffect(() => {
+    trackEvent(AnalyticsEvent.decisionShown, {
+      ...analyticsBase("home", demoState, {
+        surface: "home_suggested",
+        recommended_plan_id: recommendedPlanId ?? undefined,
+      }),
+    })
+  }, [content.ctaHref, content.headline, demoState, recommendedPlanId])
+
+  const showPlansSecondary = content.ctaHref.replace(/\/$/, "") !== "/plans"
+
   return (
     <Card className="overflow-hidden border-accent/30 bg-gradient-to-r from-accent/10 to-transparent p-0">
+      <div className="border-b border-border/40 px-4 py-3">
+        <p className="text-[11px] font-semibold leading-snug text-accent">{conversionBanner}</p>
+      </div>
       <div className="flex items-start gap-3 border-b border-border/40 p-4">
         <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent/20">
           <Sparkles className="size-4 text-accent" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold leading-snug text-foreground">{content.headline}</p>
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+            Decision
+          </p>
+          <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{content.headline}</p>
           {content.listPriceLine && (
             <p className="mt-1.5 text-[11px] font-medium tabular-nums text-foreground/90">
               {content.listPriceLine}
             </p>
           )}
-          <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{content.summary}</p>
+          <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Why</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{content.summary}</p>
           {content.supportingLine && (
             <p className="mt-2 text-xs font-medium leading-relaxed text-foreground/80">
               {content.supportingLine}
+            </p>
+          )}
+          {content.bundleIncludesLine && (
+            <p className="mt-2 text-[11px] font-medium leading-snug text-foreground/85">
+              {content.bundleIncludesLine}
             </p>
           )}
           {content.promoSupportingLine && (
@@ -113,11 +149,24 @@ function SuggestedForYouCard({
           )}
         </div>
       </div>
-      <div className="p-4">
+      <div className="flex flex-col gap-2 p-4">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Next</p>
         <Link
           href={content.ctaHref}
           className="block"
-          onClick={() =>
+          onClick={() => {
+            trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+              ...analyticsBase("home", demoState, {
+                href: content.ctaHref,
+                label: content.ctaLabel,
+                scope: "both",
+                surface: "home_suggested",
+              }),
+              recommended_plan_id: recommendedPlanId ?? undefined,
+              plan_id: content.ctaHref.startsWith("/plans/")
+                ? content.ctaHref.replace("/plans/", "").split("?")[0]
+                : undefined,
+            })
             trackEvent(AnalyticsEvent.reviewPlanOptimizerClick, {
               ...analyticsBase("home", demoState, {
                 href: content.ctaHref,
@@ -129,13 +178,39 @@ function SuggestedForYouCard({
                 ? content.ctaHref.replace("/plans/", "").split("?")[0]
                 : undefined,
             })
-          }
+          }}
         >
           <Button className="h-10 w-full gap-2 font-semibold">
             {content.ctaLabel}
             <ChevronRight className="size-4" />
           </Button>
         </Link>
+        <p className="text-center text-[11px] leading-snug text-muted-foreground">
+          {valueJustificationBestValue()}
+        </p>
+        <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">
+          {socialProofRecommended()}
+        </p>
+        {showPlansSecondary && (
+          <Link
+            href="/plans"
+            className="block"
+            onClick={() =>
+              trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                ...analyticsBase("home", demoState, {
+                  href: "/plans",
+                  label: labelReviewDetails(),
+                  surface: "home_suggested",
+                }),
+              })
+            }
+          >
+            <Button variant="ghost" className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground">
+              {labelReviewDetails()}
+              <ChevronRight className="size-3.5 opacity-70" />
+            </Button>
+          </Link>
+        )}
       </div>
     </Card>
   )
@@ -175,6 +250,20 @@ export default function HomePage() {
     () => classifyRecommendedPlans("both", state),
     [state]
   )
+
+  const homeSuggestedConversionBanner = useMemo(() => {
+    const teamIds = new Set(userTeams.map((t) => t.id))
+    const now = new Date()
+    const upcoming = userGames
+      .filter((g) => new Date(g.dateTime).getTime() >= now.getTime())
+      .sort(
+        (a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
+      )[0]
+    if (upcoming && isGameWithinHours(upcoming.dateTime, URGENCY_HOURS, now)) {
+      return missTonightUrgencyLine(urgencyTeamLabel(upcoming, teamIds))
+    }
+    return seasonUnlockBanner()
+  }, [])
 
   useEffect(() => {
     setMounted(true)
@@ -282,7 +371,7 @@ export default function HomePage() {
                   }
                 >
                   <Button className="gap-2">
-                    Add Services
+                    {labelFixMyCoverage()}
                     <ChevronRight className="size-4" />
                   </Button>
                 </Link>
@@ -618,6 +707,7 @@ export default function HomePage() {
               content={suggestedForYou}
               demoState={state}
               recommendedPlanId={homeRecommendations.bestValuePlanId}
+              conversionBanner={homeSuggestedConversionBanner}
             />
           </section>
         )}

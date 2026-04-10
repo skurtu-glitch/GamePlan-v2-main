@@ -24,8 +24,17 @@ import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
 import {
+  getAffiliateLink,
+  getBestOffer,
+  getEffectivePrice,
+  hasAffiliateLanding,
+  primaryAffiliateServiceIdForPlan,
+} from "@/lib/affiliate"
+import { formatServiceIdList } from "@/lib/streaming-service-ids"
+import {
   AnalyticsEvent,
   analyticsBase,
+  trackAffiliateClick,
   trackEvent,
 } from "@/lib/analytics"
 import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
@@ -75,6 +84,22 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
     fromPlan
       ? Math.round((upgradedBundlePromo.introEffectiveMonthlyUsd - fromPlan.monthlyCost) * 100) / 100
       : null
+
+  const stickyLeadId =
+    toPlan && toPlan.tier !== "radio"
+      ? primaryAffiliateServiceIdForPlan(toPlan)
+      : undefined
+  const stickyAffiliateHref =
+    stickyLeadId && hasAffiliateLanding(stickyLeadId)
+      ? getAffiliateLink(stickyLeadId, {
+          sourceScreen: "upgrade_impact",
+          intent: "upgrade_sticky_start",
+          planId: upgrade.toPlanId,
+        })
+      : null
+  const stickyHref = stickyAffiliateHref ?? `/plans/${upgrade.toPlanId}`
+  const stickyOffer = stickyLeadId ? getBestOffer(stickyLeadId) : null
+  const stickyPrice = stickyLeadId ? getEffectivePrice(stickyLeadId) : null
 
   return (
     <div className="flex min-h-screen flex-col bg-background pb-40">
@@ -351,14 +376,50 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
       {/* Sticky CTA */}
       <div className="fixed inset-x-0 bottom-0 border-t border-border bg-background/95 px-5 pb-20 pt-4 backdrop-blur-sm">
         <div className="mx-auto max-w-lg">
+          {toPlan && (
+            <p className="mb-2 text-center text-[10px] text-muted-foreground">
+              Includes:{" "}
+              <span className="font-medium text-foreground">
+                {formatServiceIdList(toPlan.servicesIncluded)}
+              </span>
+            </p>
+          )}
+          {stickyOffer && stickyOffer.type !== "none" && stickyPrice && stickyPrice.listPrice > 0 && (
+            <p className="mb-2 text-center text-[10px] leading-snug text-muted-foreground">
+              Promo highlight:{" "}
+              {stickyOffer.type === "free_months"
+                ? `${stickyOffer.value ?? ""} free mo`
+                : stickyOffer.type === "discount"
+                  ? "Intro discount"
+                  : "Offer"}{" "}
+              · list ${stickyPrice.listPrice.toFixed(2)}/mo
+              {stickyPrice.showPromoAdjusted
+                ? ` → est. $${stickyPrice.effectiveMonthlyPrice.toFixed(2)}/mo`
+                : ""}
+            </p>
+          )}
           <Button className="w-full gap-2" size="lg" asChild>
-            <Link
-              href={`/plans/${upgrade.toPlanId}`}
+            <a
+              href={stickyHref}
+              target={stickyAffiliateHref ? "_blank" : undefined}
+              rel={stickyAffiliateHref ? "noopener noreferrer" : undefined}
               className="flex w-full items-center justify-center gap-2"
-              onClick={() =>
+              onClick={() => {
+                if (stickyAffiliateHref && stickyLeadId) {
+                  trackAffiliateClick(stickyAffiliateHref, "upgrade_impact", state, {
+                    label: "start_best_value_plan",
+                    plan_id: upgrade.toPlanId,
+                    service_id: stickyLeadId,
+                    intent: "upgrade_sticky_start",
+                    scope,
+                    upgrade_id: upgradeId,
+                    recommended_plan_id: recs.bestValuePlanId ?? undefined,
+                  })
+                  return
+                }
                 trackEvent(AnalyticsEvent.upgradeClick, {
                   ...analyticsBase("upgrade_impact", state, {
-                    href: `/plans/${upgrade.toPlanId}`,
+                    href: stickyHref,
                     label: "upgrade_sticky_cta",
                     scope,
                     plan_id: upgrade.toPlanId,
@@ -366,11 +427,11 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                   upgrade_id: upgradeId,
                   recommended_plan_id: recs.bestValuePlanId ?? undefined,
                 })
-              }
+              }}
             >
               <Check className="size-5" />
-              Upgrade to {upgrade.toPlanName}
-            </Link>
+              Start {upgrade.toPlanName} plan
+            </a>
           </Button>
           <p className="mt-2 text-center text-xs text-muted-foreground">
             +${stats.costDelta.toFixed(2)}/mo list · +{stats.newlyWatchable} more watchable this season

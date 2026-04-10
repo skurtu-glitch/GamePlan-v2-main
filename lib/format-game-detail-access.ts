@@ -1,6 +1,14 @@
 import { missingVideoProviders, userEntitledToService } from "@/lib/access-rules"
+import { userTeams } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import type { Game, WatchOption } from "@/lib/types"
+import {
+  isGameWithinHours,
+  missTonightUrgencyLine,
+  seasonUnlockBanner,
+  urgencyTeamLabel,
+  URGENCY_HOURS,
+} from "@/lib/conversion-copy"
 import { demoMonthlyPriceUsd, serviceDisplayName } from "@/lib/streaming-service-ids"
 import type { ResolvedGameAccess } from "@/lib/resolve-game-access"
 
@@ -26,6 +34,11 @@ export interface FormattedGameDetailAccess {
   watchVerdict: FormattedWatchVerdict
   watchOptions: WatchOption[]
   whyThisAnswer: string[]
+  /**
+   * Conversion banner: near-term game → miss-tonight line; otherwise season unlock line.
+   * Presentation-only (same data as Assistant urgency layer).
+   */
+  conversionHook: string
 }
 
 function videoIds(game: Game): string[] {
@@ -179,6 +192,17 @@ function buildBestOption(
   }
 }
 
+function userFollowedTeamIdSet(): Set<string> {
+  return new Set(userTeams.map((t) => t.id))
+}
+
+function buildConversionHook(game: Game, now: Date): string {
+  if (isGameWithinHours(game.dateTime, URGENCY_HOURS, now)) {
+    return missTonightUrgencyLine(urgencyTeamLabel(game, userFollowedTeamIdSet()))
+  }
+  return seasonUnlockBanner()
+}
+
 function buildWhyThisAnswer(
   game: Game,
   resolved: ResolvedGameAccess,
@@ -221,12 +245,14 @@ function buildWhyThisAnswer(
 export function formatGameDetailAccess(
   game: Game,
   resolved: ResolvedGameAccess,
-  userState: DemoUserState
+  userState: DemoUserState,
+  now: Date = new Date()
 ): FormattedGameDetailAccess {
   return {
     bestOption: buildBestOption(game, resolved, userState),
     watchVerdict: buildWatchVerdict(game, resolved, userState),
     watchOptions: buildWatchOptions(game, userState, resolved),
     whyThisAnswer: buildWhyThisAnswer(game, resolved, userState),
+    conversionHook: buildConversionHook(game, now),
   }
 }

@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { getEngineGames, userTeams } from "@/lib/data"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
@@ -28,10 +29,29 @@ import { formatServiceIdList } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
 import {
+  getAffiliateLink,
+  getEffectivePrice,
+  hasAffiliateLanding,
+  primaryAffiliateServiceIdForPlan,
+} from "@/lib/affiliate"
+import {
   AnalyticsEvent,
   analyticsBase,
+  trackAffiliateClick,
   trackEvent,
 } from "@/lib/analytics"
+import {
+  chooseMonetizedPrimaryLabel,
+  formatBundlePlusList,
+  isGameWithinHours,
+  labelGetBestValue,
+  labelReviewDetails,
+  socialProofMostFans,
+  socialProofRecommended,
+  URGENCY_HOURS,
+  valueJustificationBestValue,
+  valueJustificationCheapest,
+} from "@/lib/conversion-copy"
 
 function optimizerRoleExplanation(
   planId: string,
@@ -57,6 +77,25 @@ export default function PlansPage() {
     () => getCurrentCoverageBaseline(selectedTeam, state),
     [selectedTeam, state]
   )
+
+  const monetizedPrimaryWithin24h = useMemo(() => {
+    const now = new Date()
+    const games = getEngineGames().filter((game) =>
+      userTeams.some(
+        (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
+      )
+    )
+    return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, now))
+  }, [])
+
+  useEffect(() => {
+    trackEvent(AnalyticsEvent.decisionShown, {
+      ...analyticsBase("plans", state, {
+        surface: "plans_optimizer_list",
+        scope: selectedTeam,
+      }),
+    })
+  }, [selectedTeam, state])
 
   const teamLabels: Record<OptimizerScope, string> = {
     blues: "Blues Only",
@@ -166,6 +205,31 @@ export default function PlansPage() {
             const listenPercent = plan.totalGames > 0 ? (listenOnlyGames / plan.totalGames) * 100 : 0
             const roleExplanation = optimizerRoleExplanation(plan.id, recommendations)
             const bundlePromo = getPlanBundlePromoSummary(plan)
+            const leadServiceId = primaryAffiliateServiceIdForPlan(plan)
+            const leadPricing =
+              leadServiceId && !isRadioOnly
+                ? getEffectivePrice(leadServiceId)
+                : null
+            const startPlanHref =
+              leadServiceId && hasAffiliateLanding(leadServiceId)
+                ? getAffiliateLink(leadServiceId, {
+                    sourceScreen: "plans",
+                    intent: "plans_start_plan",
+                    planId: plan.id,
+                  })
+                : null
+            const primaryCtaLabel = chooseMonetizedPrimaryLabel({
+              within24h: monetizedPrimaryWithin24h,
+              planName: plan.name,
+            })
+            const planValueLine =
+              plan.tier === "cheapest"
+                ? valueJustificationCheapest()
+                : valueJustificationBestValue()
+            const planSocialLine =
+              plan.tier === "value" || plan.name === "Best Value"
+                ? socialProofMostFans()
+                : socialProofRecommended()
 
             return (
               <Card 
@@ -259,6 +323,28 @@ export default function PlansPage() {
                       </p>
                       <p className="text-[10px] text-muted-foreground">/month</p>
                       <PlanPromoCallout summary={bundlePromo} className="mt-2 border-t border-border/30 pt-2 text-left" />
+                      {leadPricing && leadPricing.listPrice > 0 && (
+                        <div className="mt-2 border-t border-border/30 pt-2 text-left text-[10px] leading-snug text-muted-foreground">
+                          <p className="font-medium text-foreground/90">
+                            Lead service list: ${leadPricing.listPrice.toFixed(2)}/mo
+                          </p>
+                          {leadPricing.showPromoAdjusted ? (
+                            <>
+                              <p className="mt-0.5 text-emerald-600/90">
+                                Promo-adjusted (est.): ${leadPricing.effectiveMonthlyPrice.toFixed(2)}/mo
+                              </p>
+                              <p className="mt-0.5">
+                                Est. savings vs list: ~${leadPricing.estimatedSavings.toFixed(2)}/mo
+                              </p>
+                              {leadPricing.promoLabel && (
+                                <p className="mt-0.5 italic">{leadPricing.promoLabel}</p>
+                              )}
+                            </>
+                          ) : (
+                            <p className="mt-0.5">Intro offers hidden (stale, expired, or low confidence).</p>
+                          )}
+                        </div>
+                      )}
                     </div>
                     
                     {/* Watchable Games - Clickable */}
@@ -304,7 +390,10 @@ export default function PlansPage() {
                   {/* Services */}
                   <div className="mb-4">
                     <p className="text-xs text-muted-foreground">
-                      Includes: <span className="font-medium text-foreground">{formatServiceIdList(plan.servicesIncluded)}</span>
+                      Includes:{" "}
+                      <span className="font-medium text-foreground">
+                        {formatBundlePlusList(plan.servicesIncluded)}
+                      </span>
                     </p>
                   </div>
 
@@ -320,11 +409,61 @@ export default function PlansPage() {
 
                   {/* Actions */}
                   <div className="flex flex-col gap-3">
-                    {/* View Details */}
+                    {!isRadioOnly && startPlanHref && leadServiceId && (
+                      <a
+                        href={startPlanHref}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block"
+                        onClick={() => {
+                          trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                            ...analyticsBase("plans", state, {
+                              label: primaryCtaLabel,
+                              plan_id: plan.id,
+                              service_id: leadServiceId,
+                              intent: "plans_start_plan",
+                              scope: selectedTeam,
+                            }),
+                            recommended_plan_id: bestValuePlanId ?? undefined,
+                          })
+                          trackAffiliateClick(startPlanHref, "plans", state, {
+                            label: "start_plan",
+                            plan_id: plan.id,
+                            service_id: leadServiceId,
+                            intent: "plans_start_plan",
+                            scope: selectedTeam,
+                          })
+                        }}
+                      >
+                        <Button className="w-full justify-between gap-2 font-semibold">
+                          <span>{primaryCtaLabel}</span>
+                          <ChevronRight className="size-4 shrink-0" />
+                        </Button>
+                      </a>
+                    )}
+                    {!isRadioOnly && startPlanHref && leadServiceId && (
+                      <>
+                        <p className="text-center text-[11px] leading-snug text-muted-foreground">
+                          {planValueLine}
+                        </p>
+                        <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">
+                          {planSocialLine}
+                        </p>
+                      </>
+                    )}
                     <Link
                       href={`/plans/${plan.id}`}
                       className="block"
-                      onClick={() =>
+                      onClick={() => {
+                        trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                          ...analyticsBase("plans", state, {
+                            href: `/plans/${plan.id}`,
+                            label: labelReviewDetails(),
+                            scope: selectedTeam,
+                            plan_id: plan.id,
+                          }),
+                          recommended_plan_id: bestValuePlanId ?? undefined,
+                        })
                         trackEvent(AnalyticsEvent.comparePlansClick, {
                           ...analyticsBase("plans", state, {
                             href: `/plans/${plan.id}`,
@@ -334,21 +473,30 @@ export default function PlansPage() {
                           }),
                           recommended_plan_id: bestValuePlanId ?? undefined,
                         })
-                      }
+                      }}
                     >
                       <Button variant="outline" className="w-full justify-between">
-                        <span>View Details</span>
+                        <span>{labelReviewDetails()}</span>
                         <ChevronRight className="size-4" />
                       </Button>
                     </Link>
 
-                    {/* Upgrade Impact - for non-full, non-radio plans */}
                     {plan.tier !== "full" && plan.tier !== "radio" && (
                       <Link
                         href={`/plans/upgrade/${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`}
                         className="flex items-center justify-between rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 transition-colors hover:bg-accent/10"
                         onClick={() => {
                           const upgradeId = `${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`
+                          trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                            ...analyticsBase("plans", state, {
+                              href: `/plans/upgrade/${upgradeId}`,
+                              label: labelGetBestValue(),
+                              scope: selectedTeam,
+                              plan_id: plan.id,
+                            }),
+                            upgrade_id: upgradeId,
+                            recommended_plan_id: bestValuePlanId ?? undefined,
+                          })
                           trackEvent(AnalyticsEvent.upgradeClick, {
                             ...analyticsBase("plans", state, {
                               href: `/plans/upgrade/${upgradeId}`,
@@ -363,7 +511,9 @@ export default function PlansPage() {
                       >
                         <div className="flex items-center gap-2">
                           <Zap className="size-4 text-accent" />
-                          <span className="text-sm font-medium text-foreground">See Upgrade Impact</span>
+                          <span className="text-sm font-medium text-foreground">
+                            {labelGetBestValue()}
+                          </span>
                         </div>
                         <ChevronRight className="size-4 text-accent" />
                       </Link>

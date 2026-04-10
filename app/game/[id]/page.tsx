@@ -23,15 +23,27 @@ import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { getGameDetail } from "@/lib/game-details"
 import { formatGameDetailAccess } from "@/lib/format-game-detail-access"
+import {
+  chooseMonetizedPrimaryLabel,
+  isGameWithinHours,
+  labelFixMyCoverage,
+  labelGetBestValue,
+  labelReviewDetails,
+  socialProofRecommended,
+  URGENCY_HOURS,
+  valueJustificationBestValue,
+} from "@/lib/conversion-copy"
 import type { WatchOption, ListenFeed } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
 import type { DemoUserState } from "@/lib/demo-user"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
+import { getAffiliateLink, hasAffiliateLanding } from "@/lib/affiliate"
 import {
   AnalyticsEvent,
   analyticsBase,
+  trackAffiliateClick,
   trackEvent,
   trackListenOutbound,
 } from "@/lib/analytics"
@@ -120,6 +132,18 @@ function WatchOptionRow({
   gameId: string
   userState: DemoUserState
 }) {
+  const gameRow = getGameDetail(gameId)
+  const within24h = gameRow
+    ? isGameWithinHours(gameRow.dateTime, URGENCY_HOURS, new Date())
+    : false
+  const affiliateHref =
+    option.serviceId && hasAffiliateLanding(option.serviceId)
+      ? getAffiliateLink(option.serviceId, {
+          sourceScreen: "game_detail",
+          intent: "game_watch_row_subscribe",
+        })
+      : null
+
   return (
     <div className="flex items-start gap-3 py-3">
       <StatusIcon available={option.available} />
@@ -161,23 +185,53 @@ function WatchOptionRow({
           </Link>
         </Button>
       )}
-      {!option.available && !option.hasSubscription && option.price && (
+      {!option.available && !option.hasSubscription && (option.price || affiliateHref) && (
         <Button variant="outline" size="sm" className="shrink-0" asChild>
-          <Link
-            href="/settings/services"
-            onClick={() =>
-              trackEvent(AnalyticsEvent.connectedServicesClick, {
-                ...analyticsBase("game_detail", userState, {
-                  href: "/settings/services",
-                  label: "watch_option_add",
+          {affiliateHref && option.serviceId ? (
+            <a
+              href={affiliateHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => {
+                trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                  ...analyticsBase("game_detail", userState, {
+                    label: chooseMonetizedPrimaryLabel({
+                      within24h,
+                      planName: "",
+                    }),
+                    game_id: gameId,
+                    service_id: option.serviceId,
+                    intent: "game_watch_row_subscribe",
+                  }),
+                })
+                trackAffiliateClick(affiliateHref, "game_detail", userState, {
+                  label: "watch_row_start_service",
                   game_id: gameId,
-                }),
-              })
-            }
-          >
-            <Plus className="mr-1 size-3" />
-            Add
-          </Link>
+                  service_id: option.serviceId,
+                  intent: "game_watch_row_subscribe",
+                })
+              }}
+            >
+              <Plus className="mr-1 size-3" />
+              {chooseMonetizedPrimaryLabel({ within24h, planName: "" })}
+            </a>
+          ) : (
+            <Link
+              href="/settings/services"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.connectedServicesClick, {
+                  ...analyticsBase("game_detail", userState, {
+                    href: "/settings/services",
+                    label: "watch_option_add",
+                    game_id: gameId,
+                  }),
+                })
+              }
+            >
+              <Plus className="mr-1 size-3" />
+              {labelFixMyCoverage()}
+            </Link>
+          )}
         </Button>
       )}
     </div>
@@ -263,6 +317,17 @@ export default function GameDetailPage({
   const access = game ? resolveGameAccess(game, state) : null
   const accessUi =
     game && access ? formatGameDetailAccess(game, access, state) : null
+
+  useEffect(() => {
+    if (!game) return
+    trackEvent(AnalyticsEvent.decisionShown, {
+      ...analyticsBase("game_detail", state, {
+        game_id: id,
+        surface: "game_best_value",
+      }),
+    })
+  }, [game, id, state])
+
   /** Prefer primary home feed URL — aligns with `game.listen` / resolver flagship. */
   const listenAudioUrl =
     game?.listenFeeds.find((f) => f.type === "home" && f.url)?.url ??
@@ -360,6 +425,9 @@ export default function GameDetailPage({
             )}
           >
             <div className="px-4 py-4">
+              <p className="mb-3 text-[11px] font-semibold leading-snug text-accent">
+                {accessUi.conversionHook}
+              </p>
               <div className="mb-3 flex items-center gap-2">
                 <Sparkles
                   className={cn(
@@ -373,6 +441,9 @@ export default function GameDetailPage({
                   Best Value
                 </span>
               </div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Decision
+              </p>
               <h2
                 className={cn(
                   "mb-2 text-xl font-bold",
@@ -384,10 +455,17 @@ export default function GameDetailPage({
                 {accessUi.bestOption.type === "watch" ? "Watch" : "Just Listen"} on{" "}
                 {accessUi.bestOption.provider}
               </h2>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Why
+              </p>
               <p className="leading-relaxed text-muted-foreground">
                 {accessUi.bestOption.explanation}
               </p>
-              <div className="mt-4 flex flex-wrap gap-2">
+              <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+                Next
+              </p>
+              <div className="mt-2 flex flex-col gap-2">
+                <div className="flex flex-wrap gap-2">
                 {accessUi.bestOption.type === "listen" &&
                   (listenAudioUrl ? (
                     <Button className="bg-accent text-accent-foreground hover:bg-accent/90" asChild>
@@ -395,12 +473,18 @@ export default function GameDetailPage({
                         href={listenAudioUrl}
                         target="_blank"
                         rel="noopener noreferrer"
-                        onClick={() =>
+                        onClick={() => {
+                          trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                            ...analyticsBase("game_detail", state, {
+                              game_id: id,
+                              label: "open_audio_best_option",
+                            }),
+                          })
                           trackListenOutbound(listenAudioUrl, "game_detail", state, {
                             game_id: id,
                             label: "open_audio_best_option",
                           })
-                        }
+                        }}
                       >
                         <Play className="mr-2 size-4" />
                         Open Audio
@@ -413,7 +497,14 @@ export default function GameDetailPage({
                     >
                       <Link
                         href={listenStubPath(id)}
-                        onClick={() =>
+                        onClick={() => {
+                          trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: listenStubPath(id),
+                              label: "open_audio_best_value_stub",
+                              game_id: id,
+                            }),
+                          })
                           trackEvent(AnalyticsEvent.listenActionClick, {
                             ...analyticsBase("game_detail", state, {
                               href: listenStubPath(id),
@@ -421,7 +512,7 @@ export default function GameDetailPage({
                               game_id: id,
                             }),
                           })
-                        }
+                        }}
                       >
                         <Play className="mr-2 size-4" />
                         {listenOpenButtonLabel()}
@@ -435,7 +526,21 @@ export default function GameDetailPage({
                   >
                     <Link
                       href={watchStubPath(accessUi.bestOption.primaryWatchServiceId, id)}
-                      onClick={() =>
+                      onClick={() => {
+                        trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                          ...analyticsBase("game_detail", state, {
+                            href: watchStubPath(
+                              accessUi.bestOption.primaryWatchServiceId,
+                              id
+                            ),
+                            game_id: id,
+                            label: "open_watch_best_option",
+                            provider_hint: accessUi.bestOption.provider.split(" ")[0],
+                            ...(accessUi.bestOption.primaryWatchServiceId
+                              ? { plan_id: accessUi.bestOption.primaryWatchServiceId }
+                              : {}),
+                          }),
+                        })
                         trackEvent(AnalyticsEvent.watchActionClick, {
                           ...analyticsBase("game_detail", state, {
                             href: watchStubPath(
@@ -450,7 +555,7 @@ export default function GameDetailPage({
                               : {}),
                           }),
                         })
-                      }
+                      }}
                     >
                       <ExternalLink className="mr-2 size-4" />
                       {watchOpenButtonLabel(accessUi.bestOption.primaryWatchServiceId)}
@@ -459,7 +564,14 @@ export default function GameDetailPage({
                 )}
                 <Link
                   href="/plans"
-                  onClick={() =>
+                  onClick={() => {
+                    trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                      ...analyticsBase("game_detail", state, {
+                        href: "/plans",
+                        label: labelReviewDetails(),
+                        game_id: id,
+                      }),
+                    })
                     trackEvent(AnalyticsEvent.comparePlansClick, {
                       ...analyticsBase("game_detail", state, {
                         href: "/plans",
@@ -467,15 +579,22 @@ export default function GameDetailPage({
                         game_id: id,
                       }),
                     })
-                  }
+                  }}
                 >
                   <Button variant="outline">
                     <Tv className="mr-2 size-4" />
-                    View Plans
+                    {labelReviewDetails()}
                   </Button>
                 </Link>
+                </div>
+                <p className="text-center text-[11px] leading-snug text-muted-foreground">
+                  {valueJustificationBestValue()}
+                </p>
+                <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">
+                  {socialProofRecommended()}
+                </p>
                 {accessUi.bestOption.type === "listen" && access?.fixRecommendation && (
-                  <p className="mt-3 w-full text-xs leading-relaxed text-muted-foreground">
+                  <p className="text-xs leading-relaxed text-muted-foreground">
                     <span className="font-medium text-foreground">Also try: </span>
                     {access.fixRecommendation}
                     {" · "}
@@ -483,7 +602,15 @@ export default function GameDetailPage({
                       <Link
                         href={upgradeHref}
                         className="font-medium text-accent underline-offset-2 hover:underline"
-                        onClick={() =>
+                        onClick={() => {
+                          trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: upgradeHref,
+                              label: labelGetBestValue(),
+                              game_id: id,
+                            }),
+                            ...(upgradeImpactId ? { upgrade_id: upgradeImpactId } : {}),
+                          })
                           trackEvent(AnalyticsEvent.upgradeClick, {
                             ...analyticsBase("game_detail", state, {
                               href: upgradeHref,
@@ -492,15 +619,22 @@ export default function GameDetailPage({
                             }),
                             ...(upgradeImpactId ? { upgrade_id: upgradeImpactId } : {}),
                           })
-                        }
+                        }}
                       >
-                        Upgrade to Best Value
+                        {labelGetBestValue()}
                       </Link>
                     ) : (
                       <Link
                         href="/plans"
                         className="font-medium text-accent underline-offset-2 hover:underline"
-                        onClick={() =>
+                        onClick={() => {
+                          trackEvent(AnalyticsEvent.ctaPrimaryClick, {
+                            ...analyticsBase("game_detail", state, {
+                              href: "/plans",
+                              label: labelGetBestValue(),
+                              game_id: id,
+                            }),
+                          })
                           trackEvent(AnalyticsEvent.comparePlansClick, {
                             ...analyticsBase("game_detail", state, {
                               href: "/plans",
@@ -508,9 +642,9 @@ export default function GameDetailPage({
                               game_id: id,
                             }),
                           })
-                        }
+                        }}
                       >
-                        See Best Value in Plans
+                        {labelGetBestValue()}
                       </Link>
                     )}
                   </p>

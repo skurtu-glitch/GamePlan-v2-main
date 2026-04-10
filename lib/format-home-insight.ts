@@ -16,8 +16,9 @@ import {
 } from "@/lib/optimizer-plans"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
+import { formatBundlePlusList } from "@/lib/conversion-copy"
 
-export const HOME_SUGGESTED_CTA_LABEL = "Review Details in Plan Optimizer" as const
+export const HOME_SUGGESTED_CTA_LABEL = "Review details" as const
 
 export interface HomeInsightCardContent {
   /** Season-catalog baseline (same basis as Plan Optimizer cards). */
@@ -30,6 +31,8 @@ export interface HomeInsightCardContent {
   /** From {@link getPlanBundlePromoSummary}; only when promos are fresh + medium/high confidence. */
   promoSupportingLine?: string
   promoFreshnessLine?: string
+  /** Catalog services in the focal plan, for bundle clarity. */
+  bundleIncludesLine?: string
   ctaLabel: typeof HOME_SUGGESTED_CTA_LABEL
   ctaHref: string
 }
@@ -92,12 +95,13 @@ function withRecommendedPlanPromo(
       : `List price: Free · ${plan.name}`
 
   const bundle = getPlanBundlePromoSummary(plan, now)
+  const bundleIncludesLine = `Includes: ${formatBundlePlusList(plan.servicesIncluded)}`
   if (
     !bundle.showPromoLine ||
     bundle.introEffectiveMonthlyUsd === undefined ||
     bundle.introPeriodMonths === undefined
   ) {
-    return { ...insight, listPriceLine }
+    return { ...insight, listPriceLine, bundleIncludesLine }
   }
 
   const savings = bundle.savingsVsBaseMonthlyUsd ?? 0
@@ -107,11 +111,13 @@ function withRecommendedPlanPromo(
     2
   )}/mo avg. for the first ${bundle.introPeriodMonths} months with current offers.`
   const listRef = ` Bundle list price is $${bundle.baseMonthlyUsd.toFixed(0)}/mo.`
+  const classicPromo = `${softer}${numeric}${listRef}`.trim()
 
   return {
     ...insight,
     listPriceLine,
-    promoSupportingLine: `${softer}${numeric}${listRef}`.trim(),
+    bundleIncludesLine,
+    promoSupportingLine: bundle.promoReframeLine ?? classicPromo,
     promoFreshnessLine: bundle.freshnessLine,
   }
 }

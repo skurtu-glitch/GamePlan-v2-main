@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import { BottomNav } from "@/components/bottom-nav"
@@ -39,9 +39,11 @@ import { formatServiceIdList } from "@/lib/streaming-service-ids"
 import {
   AnalyticsEvent,
   analyticsBase,
+  trackAffiliateClick,
   trackAssistantNavigationClick,
   trackEvent,
 } from "@/lib/analytics"
+import type { AffiliateClickMeta } from "@/lib/assistant-format"
 
 const DEMO_SUGGESTED_PROMPTS = [
   { icon: Tv, text: "Can I watch tonight’s Blues game?" },
@@ -148,6 +150,8 @@ interface Message {
   engine?: EngineAssistantBody
   assistantIntent?: AssistantIntent
   planScope?: OptimizerScope
+  /** Resolved engine game id for watch answers (affiliate / video provider mapping). */
+  watchGameId?: string
 }
 
 function buildAssistantMessage(query: string, userState: DemoUserState): Message {
@@ -176,6 +180,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
       role: "assistant",
       content: "",
       assistantIntent: "watch",
+      watchGameId: parsed.gameId,
       engine: { kind: "watch", payload: answerWatchQuestion(parsed.gameId, userState) },
     }
   }
@@ -262,13 +267,52 @@ function AssistantWhy({ items }: { items: string[] }) {
   )
 }
 
+function isOutboundUrl(href: string | undefined): boolean {
+  return !!href && /^https?:\/\//i.test(href)
+}
+
+function handleAssistantCtaClick(
+  userState: DemoUserState,
+  href: string | undefined,
+  label: string,
+  affiliate: AffiliateClickMeta | undefined,
+  ctaRole: "primary" | "secondary"
+) {
+  if (!href) return
+  const ctaEvent =
+    ctaRole === "primary" ? AnalyticsEvent.ctaPrimaryClick : AnalyticsEvent.ctaSecondaryClick
+  trackEvent(ctaEvent, {
+    ...analyticsBase("assistant", userState, {
+      label,
+      cta_role: ctaRole,
+      ...(affiliate?.serviceId ? { service_id: affiliate.serviceId } : {}),
+      ...(affiliate?.planId ? { plan_id: affiliate.planId } : {}),
+      ...(affiliate?.intent ? { intent: affiliate.intent } : {}),
+    }),
+  })
+  if (isOutboundUrl(href)) {
+    trackAffiliateClick(href, "assistant", userState, {
+      label,
+      ...(affiliate?.serviceId ? { service_id: affiliate.serviceId } : {}),
+      ...(affiliate?.planId ? { plan_id: affiliate.planId } : {}),
+      ...(affiliate?.intent ? { intent: affiliate.intent } : { intent: "assistant_outbound" }),
+    })
+    return
+  }
+  trackAssistantNavigationClick(userState, href, label)
+}
+
 function ActionStack({
   primary,
   secondary,
+  valueJustification,
+  socialProof,
   userState,
 }: {
-  primary: { label: string; href?: string }
-  secondary?: { label: string; href?: string }
+  primary: { label: string; href?: string; affiliate?: AffiliateClickMeta }
+  secondary?: { label: string; href?: string; affiliate?: AffiliateClickMeta }
+  valueJustification?: string
+  socialProof?: string
   userState: DemoUserState
 }) {
   return (
@@ -277,38 +321,102 @@ function ActionStack({
         Next
       </p>
       {primary.href ? (
-        <Link
-          href={primary.href}
-          className="block"
-          onClick={() =>
-            trackAssistantNavigationClick(userState, primary.href, primary.label)
-          }
-        >
-          <Button className="h-12 w-full gap-2 text-base font-semibold shadow-md">
-            {primary.label}
-            <ChevronRight className="size-4 opacity-90" />
-          </Button>
-        </Link>
+        isOutboundUrl(primary.href) ? (
+          <a
+            href={primary.href}
+            className="block"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() =>
+              handleAssistantCtaClick(
+                userState,
+                primary.href,
+                primary.label,
+                primary.affiliate,
+                "primary"
+              )
+            }
+          >
+            <Button className="h-12 w-full gap-2 text-base font-semibold shadow-md">
+              {primary.label}
+              <ChevronRight className="size-4 opacity-90" />
+            </Button>
+          </a>
+        ) : (
+          <Link
+            href={primary.href}
+            className="block"
+            onClick={() =>
+              handleAssistantCtaClick(
+                userState,
+                primary.href,
+                primary.label,
+                primary.affiliate,
+                "primary"
+              )
+            }
+          >
+            <Button className="h-12 w-full gap-2 text-base font-semibold shadow-md">
+              {primary.label}
+              <ChevronRight className="size-4 opacity-90" />
+            </Button>
+          </Link>
+        )
       ) : (
         <Button className="h-12 w-full gap-2 text-base font-semibold shadow-md" type="button">
           {primary.label}
           <ChevronRight className="size-4 opacity-90" />
         </Button>
       )}
+      {valueJustification && (
+        <p className="text-center text-[11px] leading-snug text-muted-foreground">{valueJustification}</p>
+      )}
+      {socialProof && (
+        <p className="text-center text-[11px] font-medium leading-snug text-foreground/75">{socialProof}</p>
+      )}
       {secondary &&
         (secondary.href ? (
-          <Link
-            href={secondary.href}
-            className="block"
-            onClick={() =>
-              trackAssistantNavigationClick(userState, secondary.href, secondary.label)
-            }
-          >
-            <Button variant="ghost" className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground">
-              {secondary.label}
-              <ChevronRight className="size-3.5 opacity-70" />
-            </Button>
-          </Link>
+          isOutboundUrl(secondary.href) ? (
+            <a
+              href={secondary.href}
+              className="block"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() =>
+                handleAssistantCtaClick(
+                  userState,
+                  secondary.href,
+                  secondary.label,
+                  secondary.affiliate,
+                  "secondary"
+                )
+              }
+            >
+              <Button variant="ghost" className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground">
+                {secondary.label}
+                <ChevronRight className="size-3.5 opacity-70" />
+              </Button>
+            </a>
+          ) : (
+            <Link
+              href={secondary.href}
+              className="block"
+              onClick={() =>
+                handleAssistantCtaClick(
+                  userState,
+                  secondary.href,
+                  secondary.label,
+                  secondary.affiliate,
+                  "secondary"
+                )
+              }
+            >
+              <Button variant="ghost" className="h-9 w-full gap-1.5 text-xs font-medium text-muted-foreground">
+                {secondary.label}
+                <ChevronRight className="size-3.5 opacity-70" />
+              </Button>
+            </Link>
+          )
         ) : (
           <Button
             variant="ghost"
@@ -465,6 +573,8 @@ export default function AssistantPage() {
                       body={message.engine}
                       userState={state}
                       planScope={message.planScope}
+                      watchGameId={message.watchGameId}
+                      assistantMessageId={message.id}
                       onPickPrompt={(t) => handleSend(t, "suggested")}
                     />
                     {message.engine.kind !== "fallback" && (
@@ -549,12 +659,25 @@ function EngineResponseCard({
   onPickPrompt,
   userState,
   planScope,
+  watchGameId,
+  assistantMessageId,
 }: {
   body: EngineAssistantBody
   onPickPrompt: (text: string) => void
   userState: DemoUserState
   planScope?: OptimizerScope
+  watchGameId?: string
+  assistantMessageId: string
 }) {
+  useEffect(() => {
+    trackEvent(AnalyticsEvent.decisionShown, {
+      ...analyticsBase("assistant", userState, {
+        assistant_card: body.kind,
+        message_id: assistantMessageId,
+      }),
+    })
+  }, [assistantMessageId, body.kind, userState])
+
   if (body.kind === "fallback") {
     const decision = formatAssistantDecision({ kind: "fallback", headline: body.headline })
     const why = formatAssistantWhy({ kind: "fallback", summary: body.summary })
@@ -594,9 +717,17 @@ function EngineResponseCard({
 
   if (body.kind === "watch") {
     const p = body.payload
-    const decision = formatAssistantDecision({ kind: "watch", payload: p })
+    const decision = formatAssistantDecision({
+      kind: "watch",
+      payload: p,
+      gameId: watchGameId,
+    })
     const why = formatAssistantWhy({ kind: "watch", payload: p })
-    const next = formatAssistantNextAction({ kind: "watch", payload: p })
+    const next = formatAssistantNextAction({
+      kind: "watch",
+      payload: p,
+      gameId: watchGameId,
+    })
     return (
       <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">
         <div className="bg-gradient-to-br from-secondary/40 to-secondary/15 px-4 py-3.5">
@@ -611,6 +742,8 @@ function EngineResponseCard({
         <ActionStack
           primary={next.primary}
           secondary={next.secondary}
+          valueJustification={next.valueJustification}
+          socialProof={next.socialProof}
           userState={userState}
         />
       </Card>
@@ -633,7 +766,12 @@ function EngineResponseCard({
       userState,
       decisionText: decision,
     })
-    const next = formatAssistantNextAction({ kind: "plan", payload: p })
+    const next = formatAssistantNextAction({
+      kind: "plan",
+      payload: p,
+      scope,
+      userState,
+    })
     return (
       <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">
         <div className="bg-gradient-to-br from-secondary/40 to-secondary/15 px-4 py-3.5">
@@ -645,7 +783,13 @@ function EngineResponseCard({
           </p>
         </div>
         <AssistantWhy items={why} />
-        <ActionStack primary={next.primary} userState={userState} />
+        <ActionStack
+          primary={next.primary}
+          secondary={next.secondary}
+          valueJustification={next.valueJustification}
+          socialProof={next.socialProof}
+          userState={userState}
+        />
       </Card>
     )
   }
@@ -679,6 +823,8 @@ function EngineResponseCard({
       <ActionStack
         primary={next.primary}
         secondary={next.secondary}
+        valueJustification={next.valueJustification}
+        socialProof={next.socialProof}
         userState={userState}
       />
     </Card>

@@ -26,6 +26,81 @@ import {
 } from "lucide-react"
 import { teamsForFollowedIds } from "@/lib/data"
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
+import { useScheduleOptional } from "@/components/providers/schedule-provider"
+
+const PIPELINE_DEBUG = process.env.NEXT_PUBLIC_GAMEPLAN_PIPELINE_DEBUG === "1"
+
+function PipelineDebugPanel() {
+  const clientSchedule = useScheduleOptional()
+  const [open, setOpen] = useState(false)
+  const [text, setText] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (!open || text !== null) return
+    let cancelled = false
+    setLoading(true)
+    ;(async () => {
+      try {
+        const res = await fetch("/api/gameplan/schedule")
+        const json = await res.json()
+        if (!cancelled) setText(JSON.stringify(json, null, 2))
+      } catch (e) {
+        if (!cancelled) setText(e instanceof Error ? e.message : String(e))
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [open, text])
+
+  return (
+    <section className="mb-6">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className="mb-3 flex w-full items-center justify-between text-left text-sm font-medium uppercase tracking-wider text-muted-foreground"
+      >
+        <span>Pipeline status (debug)</span>
+        <ChevronRight
+          className={`size-4 transition-transform ${open ? "rotate-90" : ""}`}
+        />
+      </button>
+      {open && (
+        <Card className="overflow-hidden border-dashed border-border p-3">
+          {loading && (
+            <p className="text-xs text-muted-foreground">Loading…</p>
+          )}
+          {!loading && text && (
+            <pre className="max-h-64 overflow-auto text-[10px] leading-snug text-muted-foreground">
+              {text}
+              {clientSchedule
+                ? `\n\n--- client ScheduleProvider ---\n${JSON.stringify(
+                    {
+                      kind: clientSchedule.kind,
+                      scheduleVersion: clientSchedule.scheduleVersion,
+                      isHydrating: clientSchedule.isHydrating,
+                      isReady: clientSchedule.isReady,
+                      loadError: clientSchedule.loadError,
+                      sourceUsed: clientSchedule.sourceUsed,
+                      fallbackUsed: clientSchedule.fallbackUsed,
+                      freshness: clientSchedule.freshness,
+                      validation: clientSchedule.validation,
+                      gameCount: clientSchedule.games.length,
+                    },
+                    null,
+                    2
+                  )}`
+                : ""}
+            </pre>
+          )}
+        </Card>
+      )}
+    </section>
+  )
+}
 
 interface SettingItemProps {
   icon: React.ElementType
@@ -533,6 +608,8 @@ export default function SettingsPage() {
             )}
           </Card>
         </section>
+
+        {PIPELINE_DEBUG && <PipelineDebugPanel />}
 
         <p className="mt-8 text-center text-xs text-muted-foreground">
           GamePlan v1.0.0

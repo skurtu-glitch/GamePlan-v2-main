@@ -4,6 +4,10 @@ import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import {
+  ScheduleHydrationSkeleton,
+  useSchedule,
+} from "@/components/providers/schedule-provider"
 import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import { ACCESS_RULES_SEE_PLANS } from "@/lib/access-rules"
@@ -202,10 +206,13 @@ function SuggestedForYouCard({
 
 export default function HomePage() {
   const { state } = useDemoUser()
+  const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
   const [mounted, setMounted] = useState(false)
   /** Bumps on an interval so “tonight” vs “upcoming” stays correct across midnight / long sessions. */
   const [scheduleTick, setScheduleTick] = useState(0)
   const hasConnectedServices = state.connectedServiceIds.length > 0
+  /** Avoid flashing bundled schedule summaries while canonical API hydrates. */
+  const scheduleBlocked = isScheduleHydrating && hasConnectedServices
 
   const userGames = useMemo(() => {
     const followed = teamsForFollowedIds(state.followedTeamIds)
@@ -214,7 +221,7 @@ export default function HomePage() {
         (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
       )
     )
-  }, [state.followedTeamIds])
+  }, [state.followedTeamIds, scheduleVersion])
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -260,10 +267,13 @@ export default function HomePage() {
     listenOnlyTonight,
   )
 
-  const suggestedForYou = useMemo(() => buildHomeSuggestedInsight(state, "both"), [state])
+  const suggestedForYou = useMemo(
+    () => buildHomeSuggestedInsight(state, "both"),
+    [state, scheduleVersion]
+  )
   const homeRecommendations = useMemo(
     () => classifyRecommendedPlans("both", state),
-    [state]
+    [state, scheduleVersion]
   )
 
   const homeSuggestedConversionBanner = useMemo(() => {
@@ -278,7 +288,7 @@ export default function HomePage() {
       return missTonightUrgencyLine(urgencyTeamLabel(upcoming, teamIds))
     }
     return seasonUnlockBanner()
-  }, [scheduleTick, userGames, state.followedTeamIds])
+  }, [scheduleTick, userGames, state.followedTeamIds, scheduleVersion])
 
   useEffect(() => {
     setMounted(true)
@@ -398,8 +408,14 @@ export default function HomePage() {
           </section>
         )}
 
+        {scheduleBlocked && (
+          <section className="mb-6">
+            <ScheduleHydrationSkeleton />
+          </section>
+        )}
+
         {/* EDGE CASE: No Games Tonight */}
-        {coverageState === "no_games" && (
+        {!scheduleBlocked && coverageState === "no_games" && (
           <section className="mb-6">
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="p-6 text-center">
@@ -421,7 +437,9 @@ export default function HomePage() {
         )}
 
         {/* COVERAGE HERO - Shows for all states with games */}
-        {tonightsGames.length > 0 && coverageState !== "no_services" && (
+        {!scheduleBlocked &&
+          tonightsGames.length > 0 &&
+          coverageState !== "no_services" && (
           <section className="mb-6">
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="border-b border-border/50 bg-secondary/30 px-4 py-3">
@@ -508,7 +526,9 @@ export default function HomePage() {
         )}
 
         {/* Tonight’s games — directly under coverage; no separate section title */}
-        {tonightsGames.length > 0 && coverageState !== "no_services" && (
+        {!scheduleBlocked &&
+          tonightsGames.length > 0 &&
+          coverageState !== "no_services" && (
           <section className="mb-8">
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="divide-y divide-border/50">
@@ -614,7 +634,7 @@ export default function HomePage() {
         )}
 
         {/* UPCOMING GAMES */}
-        {upcomingGames.length > 0 && (
+        {!scheduleBlocked && upcomingGames.length > 0 && (
           <section className="mb-8">
             <div className="mb-4 flex flex-col gap-0.5">
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
@@ -753,7 +773,11 @@ export default function HomePage() {
         )}
 
         {/* Suggested for You — optimizer-led, at end of Home flow */}
-        {mounted && hasConnectedServices && suggestedForYou && coverageState !== "no_services" && (
+        {!scheduleBlocked &&
+          mounted &&
+          hasConnectedServices &&
+          suggestedForYou &&
+          coverageState !== "no_services" && (
           <section className="mb-2">
             <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Suggested for You
@@ -774,7 +798,10 @@ export default function HomePage() {
         )}
 
         {/* Complete Empty State - No teams, no games */}
-        {tonightsGames.length === 0 && upcomingGames.length === 0 && coverageState !== "no_services" && (
+        {!scheduleBlocked &&
+          tonightsGames.length === 0 &&
+          upcomingGames.length === 0 &&
+          coverageState !== "no_services" && (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-secondary">
               <Tv className="size-8 text-muted-foreground" />

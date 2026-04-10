@@ -9,7 +9,7 @@ import {
 } from "@/lib/current-user-coverage"
 import type { DemoUserState } from "@/lib/demo-user"
 import { demoUserWithConnectedServiceIds } from "@/lib/demo-user"
-import { getEngineGames } from "@/lib/data-sources/games"
+import { getEngineGames } from "@/lib/data"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import type { SampleTransitionCounts } from "@/lib/plan-coverage"

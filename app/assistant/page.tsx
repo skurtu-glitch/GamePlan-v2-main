@@ -5,12 +5,12 @@ import Link from "next/link"
 import type { LucideIcon } from "lucide-react"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import { useSchedule } from "@/components/providers/schedule-provider"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
   Send,
   Sparkles,
-  Tv,
   Calendar,
   ChevronRight,
   TrendingUp,
@@ -45,10 +45,9 @@ import {
 } from "@/lib/analytics"
 import type { AffiliateClickMeta } from "@/lib/assistant-format"
 
+/** Icon hints for generic prompts; team-specific lines come from {@link createSuggestedPrompts}. */
 const DEMO_SUGGESTED_PROMPTS = [
-  { icon: Tv, text: "Can I watch tonight’s Blues game?" },
-  { icon: Tv, text: "Why can’t I watch the Cardinals tonight?" },
-  { icon: TrendingUp, text: "What’s the cheapest way to watch more games?" },
+  { icon: TrendingUp, text: "What's the cheapest way to watch more games?" },
   { icon: Calendar, text: "What am I missing on video?" },
 ] as const
 
@@ -226,6 +225,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
 }
 
 function AssistantContextBar({ userState }: { userState: DemoUserState }) {
+  const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
   const line = useMemo(() => {
     const names = teamsForFollowedIds(userState.followedTeamIds)
       .map((t) => t.name)
@@ -241,7 +241,16 @@ function AssistantContextBar({ userState }: { userState: DemoUserState }) {
     const live = getCurrentUserCoverageSummary("both", userState)
     const gamesLine = `${live.gamesWatchable} of ${live.totalGames} games watchable`
     return `${teamLine} · ${svc} · ${gamesLine} · ${live.coveragePercent}%`
-  }, [userState])
+  }, [userState, scheduleVersion])
+
+  if (isScheduleHydrating && userState.connectedServiceIds.length > 0) {
+    return (
+      <div
+        className="mb-4 h-10 animate-pulse rounded-xl border border-border/40 bg-muted/30 px-3 py-2"
+        aria-hidden
+      />
+    )
+  }
 
   return (
     <div className="mb-4 rounded-xl border border-border/60 bg-muted/20 px-3 py-2 text-center text-[11px] font-medium leading-snug text-muted-foreground">

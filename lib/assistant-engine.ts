@@ -3,7 +3,7 @@
  */
 
 import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
-import type { Game } from "@/lib/types"
+import type { Game, Team } from "@/lib/types"
 import type { DemoUserState } from "@/lib/demo-user"
 import {
   getCurrentUserCoverageSummary,
@@ -378,46 +378,62 @@ export function answerMissingGamesQuestion(
   }
 }
 
+function primaryFollowedTeamInGame(
+  game: Game,
+  followedOrdered: ReturnType<typeof teamsForFollowedIds>
+): Team | undefined {
+  for (const t of followedOrdered) {
+    if (t.id === game.homeTeam.id || t.id === game.awayTeam.id) return t
+  }
+  return undefined
+}
+
 export function createSuggestedPrompts(userState: DemoUserState): SuggestedPrompt[] {
   const prompts: SuggestedPrompt[] = []
+  const seen = new Set<string>()
+  const push = (text: string) => {
+    const key = text.trim().toLowerCase()
+    if (seen.has(key)) return
+    seen.add(key)
+    prompts.push({ text })
+  }
 
   const now = new Date()
   const followed = teamsForFollowedIds(userState.followedTeamIds)
-  const tonights = getEngineGames().filter((game) => {
-    if (
-      !followed.some(
-        (t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id
-      )
-    ) {
-      return false
-    }
-    const gameDate = new Date(game.dateTime)
-    return gameDate.toDateString() === now.toDateString()
+  const tonights = getEngineGames()
+    .filter((game) => {
+      if (
+        !followed.some(
+          (t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id
+        )
+      ) {
+        return false
+      }
+      return new Date(game.dateTime).toDateString() === now.toDateString()
+    })
+    .sort(
+      (a, b) =>
+        new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
+    )
+
+  tonights.slice(0, 2).forEach((game, i) => {
+    const team = primaryFollowedTeamInGame(game, followed)
+    if (!team) return
+    const text =
+      i % 2 === 0
+        ? `Can I watch tonight's ${team.name} game?`
+        : `Why can't I watch the ${team.name} game tonight?`
+    push(text)
   })
 
-  const bluesTonight = tonights.some(
-    (g) => g.homeTeam.id === "stl-blues" || g.awayTeam.id === "stl-blues"
-  )
-  const cardsTonight = tonights.some(
-    (g) =>
-      g.homeTeam.id === "stl-cardinals" || g.awayTeam.id === "stl-cardinals"
-  )
-
-  if (bluesTonight) {
-    prompts.push({ text: "Can I watch tonight’s Blues game?" })
-  }
-  if (cardsTonight) {
-    prompts.push({ text: "Why can’t I watch the Cardinals tonight?" })
-  }
-
-  prompts.push({ text: "What’s the cheapest way to watch more games?" })
-  prompts.push({ text: "What am I missing on video?" })
+  push("What's the cheapest way to watch more games?")
+  push("What am I missing on video?")
 
   const hasVideo = userState.connectedServiceIds.some((id) =>
     ["espn-plus", "mlb-tv", "fanduel-sports", "max"].includes(id)
   )
   if (!hasVideo) {
-    prompts.push({ text: "What should I add first?" })
+    push("What should I add first?")
   }
 
   return prompts

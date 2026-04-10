@@ -1,9 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import {
+  ScheduleHydrationSkeleton,
+  useSchedule,
+} from "@/components/providers/schedule-provider"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -18,6 +22,119 @@ import {
   Zap,
 } from "lucide-react"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
+import { resolveGameAccess } from "@/lib/resolve-game-access"
+import type { DemoUserState } from "@/lib/demo-user"
+import type { Game } from "@/lib/types"
+import { cn } from "@/lib/utils"
+
+function pickExampleEngineGames(followedIds: readonly string[], limit: number): Game[] {
+  const all = [...getEngineGames()].sort(
+    (a, b) => new Date(a.dateTime).getTime() - new Date(b.dateTime).getTime()
+  )
+  const t0 = Date.now()
+  const upcoming = all.filter((g) => new Date(g.dateTime).getTime() >= t0)
+  const pool = upcoming.length > 0 ? upcoming : all
+
+  const followedTeams = teamsForFollowedIds(followedIds)
+  const followedSet = new Set(followedTeams.map((t) => t.id))
+  const preferred = pool.filter(
+    (g) => followedSet.has(g.homeTeam.id) || followedSet.has(g.awayTeam.id)
+  )
+  const preferredIds = new Set(preferred.map((g) => g.id))
+  const merged = [...preferred, ...pool.filter((g) => !preferredIds.has(g.id))]
+  return merged.slice(0, limit)
+}
+
+function formatExampleMatchup(game: Game): string {
+  return `${game.awayTeam.city} ${game.awayTeam.name} vs ${game.homeTeam.city} ${game.homeTeam.name}`
+}
+
+function ServiceExampleGames({
+  userState,
+  isConnected,
+}: {
+  userState: DemoUserState
+  isConnected: boolean
+}) {
+  const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
+  const examples = useMemo(
+    () => pickExampleEngineGames(userState.followedTeamIds, 2),
+    [userState.followedTeamIds, scheduleVersion]
+  )
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
+
+  if (isScheduleHydrating) {
+    return (
+      <section className="mb-6">
+        <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+          Example Games {isConnected ? "Covered" : "Unlocked"}
+        </h3>
+        <ScheduleHydrationSkeleton />
+      </section>
+    )
+  }
+
+  if (examples.length === 0) return null
+
+  return (
+    <section className="mb-6">
+      <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+        Example Games {isConnected ? "Covered" : "Unlocked"}
+      </h3>
+      <Card className="divide-y divide-border/50 overflow-hidden p-0">
+        {examples.map((game) => {
+          const access = resolveGameAccess(game, userState)
+          const dateLine = mounted
+            ? new Date(game.dateTime).toLocaleString("en-US", {
+                weekday: "short",
+                month: "short",
+                day: "numeric",
+                hour: "numeric",
+                minute: "2-digit",
+              })
+            : "…"
+          const badge =
+            access.status === "watchable"
+              ? {
+                  label: "Watchable",
+                  className:
+                    "bg-emerald-500/15 text-emerald-400",
+                }
+              : access.status === "listen-only"
+                ? {
+                    label: "Listen-only",
+                    className: "bg-amber-500/15 text-amber-400",
+                  }
+                : {
+                    label: "Not available",
+                    className: "bg-muted text-muted-foreground",
+                  }
+          return (
+            <div key={game.id} className="flex items-center justify-between p-4">
+              <div className="min-w-0 pr-2">
+                <p className="text-sm font-medium text-foreground">
+                  {formatExampleMatchup(game)}
+                </p>
+                <p className="text-xs text-muted-foreground">{dateLine}</p>
+              </div>
+              <span
+                className={cn(
+                  "flex shrink-0 items-center gap-1 rounded-full px-2 py-1 text-xs font-medium",
+                  badge.className
+                )}
+              >
+                {access.status === "watchable" && <Check className="size-3" />}
+                {badge.label}
+              </span>
+            </div>
+          )
+        })}
+      </Card>
+    </section>
+  )
+}
 
 interface StreamingService {
   id: string
@@ -124,32 +241,7 @@ export default function ConnectedServicesPage() {
             </Card>
           )}
 
-          {/* Example Games */}
-          <section className="mb-6">
-            <h3 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Example Games {isConnected ? "Covered" : "Unlocked"}
-            </h3>
-            <Card className="overflow-hidden divide-y divide-border/50 p-0">
-              <div className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Blues vs Rangers</p>
-                  <p className="text-xs text-muted-foreground">Wed, Apr 9 · 7:00 PM</p>
-                </div>
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-400">
-                  <Check className="size-3" /> Watchable
-                </span>
-              </div>
-              <div className="flex items-center justify-between p-4">
-                <div>
-                  <p className="text-sm font-medium text-foreground">Cardinals vs Cubs</p>
-                  <p className="text-xs text-muted-foreground">Thu, Apr 10 · 1:20 PM</p>
-                </div>
-                <span className="flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-1 text-xs font-medium text-emerald-400">
-                  <Check className="size-3" /> Watchable
-                </span>
-              </div>
-            </Card>
-          </section>
+          <ServiceExampleGames userState={state} isConnected={isConnected} />
 
           {/* CTA */}
           <Button

@@ -1,11 +1,14 @@
-import type { GameDetail } from "./types"
+import type { Game, GameDetail, ListenFeed } from "./types"
 import { getEngineGames } from "./data"
 import { alignListenFeedsWithGameListen } from "./align-listen-feeds"
 import { LISTEN_FEED } from "./streaming-service-ids"
 
-export const bluesGameDetail: GameDetail = {
-  ...getEngineGames()[0],
-  listenFeeds: [
+/**
+ * Curated listen rows keyed by stable engine `game.id` (not schedule array order).
+ * Games without an entry use {@link defaultListenFeedsForGame}.
+ */
+const CURATED_LISTEN_FEEDS: Record<string, ListenFeed[]> = {
+  "game-1": [
     {
       name: "Blues Radio Network",
       type: "home",
@@ -27,11 +30,7 @@ export const bluesGameDetail: GameDetail = {
       free: false,
     },
   ],
-}
-
-export const cardinalsGameDetail: GameDetail = {
-  ...getEngineGames()[1],
-  listenFeeds: [
+  "game-2": [
     {
       name: "Cardinals Radio Network",
       type: "home",
@@ -61,16 +60,39 @@ export const cardinalsGameDetail: GameDetail = {
   ],
 }
 
-export const gameDetails: Record<string, GameDetail> = {
-  "game-1": bluesGameDetail,
-  "game-2": cardinalsGameDetail,
+function defaultListenFeedsForGame(game: Game): ListenFeed[] {
+  const homeProvider = game.listen.provider?.trim() || "Team audio"
+  const national: ListenFeed =
+    game.homeTeam.sport === "MLB"
+      ? { name: "MLB Audio", type: "national", provider: "MLB App", free: false }
+      : { name: "NHL App Audio", type: "national", provider: "NHL App", free: false }
+
+  return [
+    {
+      name: `${game.homeTeam.city} ${game.homeTeam.name} Radio`,
+      type: "home",
+      provider: homeProvider,
+      free: true,
+    },
+    {
+      name: `${game.awayTeam.city} ${game.awayTeam.name} Radio`,
+      type: "away",
+      provider: `${game.awayTeam.city} broadcast`,
+      free: true,
+    },
+    national,
+  ]
 }
 
 export function getGameDetail(id: string): GameDetail | undefined {
-  const row = gameDetails[id]
-  if (!row) return undefined
+  const game = getEngineGames().find((g) => g.id === id)
+  if (!game) return undefined
+
+  const listenFeeds = CURATED_LISTEN_FEEDS[id] ?? defaultListenFeedsForGame(game)
+  const detail: GameDetail = { ...game, listenFeeds }
+
   return {
-    ...row,
-    listenFeeds: alignListenFeedsWithGameListen(row, row.listenFeeds),
+    ...detail,
+    listenFeeds: alignListenFeedsWithGameListen(detail, detail.listenFeeds),
   }
 }

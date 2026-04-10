@@ -67,7 +67,7 @@ function isWatchIntent(n: string): boolean {
  */
 export function parseAssistantQuery(
   input: string,
-  _userState: DemoUserState,
+  userState: DemoUserState,
   now: Date = new Date()
 ): ParsedAssistantQuery {
   const n = normalize(input)
@@ -87,7 +87,7 @@ export function parseAssistantQuery(
   if (isWatchIntent(n)) {
     return {
       intent: "watch-question",
-      gameId: resolveEngineGameIdForWatchQuery(n, now),
+      gameId: resolveEngineGameIdForWatchQuery(n, now, userState),
     }
   }
 

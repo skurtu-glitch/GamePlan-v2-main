@@ -1,7 +1,7 @@
 import type { Team, StreamingPlan } from "./types"
 import { DEFAULT_FOLLOWED_TEAM_IDS } from "./demo-user"
 import { PROVIDER_LABEL, serviceDisplayName } from "./streaming-service-ids"
-import { bindDemoSchedule, getEngineGames } from "./data-sources/games"
+import { bindDemoSchedule } from "./data-sources/games"
 
 export const teams: Team[] = [
   {
@@ -63,18 +63,27 @@ export const userTeams = teamsForFollowedIds(DEFAULT_FOLLOWED_TEAM_IDS)
 
 bindDemoSchedule(teams)
 
-/** @deprecated Prefer `getEngineGames()` from `@/lib/data-sources/games` or `@/lib/data`. */
-export const games = getEngineGames()
+/** Canonical schedule rows: always call {@link getEngineGames} (no static re-export snapshot). */
+
+export { getScheduleState } from "./schedule-client-bridge"
 
 export {
   bindDemoSchedule,
+  getDataFreshness,
   getDefaultGamesDataSource,
   getEngineGames,
   getGamesForTeams,
   getGamesInWindow,
+  getLastScheduleValidation,
   getNormalizedSchedule,
   getUpcomingGames,
   toNormalizedGame,
+} from "./data-sources/games"
+
+export type {
+  DataFreshness,
+  ScheduleSourceUsed,
+  ScheduleValidationSummary,
 } from "./data-sources/games"
 
 export type { GamesDataSource } from "./data-sources/games"

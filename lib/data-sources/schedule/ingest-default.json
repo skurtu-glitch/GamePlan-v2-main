@@ -1,0 +1,69 @@
+{
+  "_meta": {
+    "lastUpdated": "2025-04-10T12:00:00.000Z",
+    "sourceName": "structured-ingest-default",
+    "ttlMsSuggested": 3600000
+  },
+  "events": [
+    {
+      "stableGameId": "game-1",
+      "externalKey": "stl-col-1",
+      "league": "NHL",
+      "homeTeamId": "stl-blues",
+      "awayTeamId": "col-avalanche",
+      "dayOffset": 0,
+      "hour": 19,
+      "minute": 0,
+      "venue": "Enterprise Center",
+      "broadcastProfile": "nhl-national-espn-plus"
+    },
+    {
+      "stableGameId": "game-2",
+      "externalKey": "stl-chc-1",
+      "league": "MLB",
+      "homeTeamId": "stl-cardinals",
+      "awayTeamId": "chi-cubs",
+      "dayOffset": 0,
+      "hour": 19,
+      "minute": 15,
+      "venue": "Busch Stadium",
+      "broadcastProfile": "mlb-rsn-fanduel-unavailable"
+    },
+    {
+      "stableGameId": "game-3",
+      "externalKey": "col-stl-1",
+      "league": "NHL",
+      "homeTeamId": "col-avalanche",
+      "awayTeamId": "stl-blues",
+      "dayOffset": 1,
+      "hour": 20,
+      "minute": 0,
+      "venue": "Ball Arena",
+      "broadcastProfile": "nhl-national-max"
+    },
+    {
+      "stableGameId": "game-4",
+      "externalKey": "chc-stl-1",
+      "league": "MLB",
+      "homeTeamId": "chi-cubs",
+      "awayTeamId": "stl-cardinals",
+      "dayOffset": 3,
+      "hour": 13,
+      "minute": 20,
+      "venue": "Wrigley Field",
+      "broadcastProfile": "mlb-oom-mlb-tv"
+    },
+    {
+      "stableGameId": "game-5",
+      "externalKey": "stl-col-2",
+      "league": "NHL",
+      "homeTeamId": "stl-blues",
+      "awayTeamId": "col-avalanche",
+      "dayOffset": 5,
+      "hour": 19,
+      "minute": 0,
+      "venue": "Enterprise Center",
+      "broadcastProfile": "nhl-rsn-fanduel-available"
+    }
+  ]
+}

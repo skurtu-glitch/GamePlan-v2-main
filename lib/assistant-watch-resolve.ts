@@ -3,7 +3,7 @@
  * No LLM; uses `getEngineGames()` (same source as Home / Game Detail).
  */
 
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
 import type { Game } from "@/lib/types"
@@ -30,9 +30,10 @@ function inferWatchTeamIntent(n: string): WatchTeamIntent | null {
   return "cardinals"
 }
 
-function userRelevantGames(games: Game[]): Game[] {
+function userRelevantGames(games: Game[], userState: DemoUserState): Game[] {
+  const followed = teamsForFollowedIds(userState.followedTeamIds)
   return games.filter((game) =>
-    userTeams.some(
+    followed.some(
       (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
     )
   )
@@ -88,26 +89,26 @@ function pickPreferredGameId(candidates: Game[], now: Date): string | undefined 
 /** Next relevant engine game id for a Blues / Cardinals / both scope (tonight first, then upcoming). */
 export function resolveEngineGameIdForTeamWatch(
   intent: WatchTeamIntent,
-  now: Date
+  now: Date,
+  userState: DemoUserState
 ): string | undefined {
   const candidates = sortByStartTimeAsc(
-    filterByTeamIntent(userRelevantGames(getEngineGames()), intent)
+    filterByTeamIntent(userRelevantGames(getEngineGames(), userState), intent)
   )
   return pickPreferredGameId(candidates, now)
 }
 
 /**
- * Map optimizer scope to a watch game id using the live schedule.
- * `userState` is accepted for API stability; resolution currently follows `userTeams` + engine games.
+ * Map optimizer scope to a watch game id using the live schedule and the user’s followed teams.
  */
 export function resolveGameIdForTeamIntent(
   scope: OptimizerScope,
-  _userState: DemoUserState,
+  userState: DemoUserState,
   now: Date
 ): string | undefined {
   const intent: WatchTeamIntent =
     scope === "blues" ? "blues" : scope === "cardinals" ? "cardinals" : "both"
-  return resolveEngineGameIdForTeamWatch(intent, now)
+  return resolveEngineGameIdForTeamWatch(intent, now, userState)
 }
 
 /**
@@ -117,9 +118,10 @@ export function resolveGameIdForTeamIntent(
  */
 export function resolveEngineGameIdForWatchQuery(
   normalizedQuery: string,
-  now: Date
+  now: Date,
+  userState: DemoUserState
 ): string | undefined {
   const intent = inferWatchTeamIntent(normalizedQuery)
   if (!intent) return undefined
-  return resolveEngineGameIdForTeamWatch(intent, now)
+  return resolveEngineGameIdForTeamWatch(intent, now, userState)
 }

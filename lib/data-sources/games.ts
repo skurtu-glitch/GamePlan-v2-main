@@ -1,12 +1,20 @@
 /**
- * Game schedule data source: static demo schedule today, swappable for external APIs later.
+ * Game schedule engine: canonical ingest → normalization → rights mapping → `Game` rows.
+ * Falls back to inline static demo if ingest fails (resolver contract unchanged).
  *
- * Always import `@/lib/data` (or call `bindDemoSchedule`) before using getters so the demo
+ * Always import `@/lib/data` (or call `bindDemoSchedule`) before using getters so the
  * catalog is registered.
  */
 
 import type { Game, Team } from "@/lib/types"
+import { composeEngineGamesFromNormalized } from "@/lib/data-normalization/compose-engine-games"
+import { normalizeScheduleIngest } from "@/lib/data-normalization/normalize-schedule"
+import type { ScheduleValidationError } from "@/lib/data-validation/validate-schedule-ingest"
+import { validateScheduleIngest } from "@/lib/data-validation/validate-schedule-ingest"
 import { LISTEN_FEED, PROVIDER_LABEL } from "@/lib/streaming-service-ids"
+import defaultIngest from "@/lib/data-sources/schedule/ingest-default.json"
+import type { ScheduleIngestPayload } from "@/lib/data-sources/schedule/types"
+import { getActiveEngineGames } from "@/lib/schedule-client-bridge"
 import type { NormalizedGame, NormalizedLeague, NormalizedTeamSide } from "./types"
 
 export interface GamesDataSource {
@@ -19,6 +27,122 @@ export interface GamesDataSource {
 
 let schedule: Game[] | null = null
 
+/** Freshness for the currently bound schedule (sync path uses committed ingest). */
+let scheduleFreshness: DataFreshness = {
+  lastUpdated: new Date(0).toISOString(),
+  sourceName: "uninitialized",
+  isStale: true,
+  sourceUsed: "uninitialized",
+  fallbackUsed: false,
+}
+
+export type ScheduleSourceUsed =
+  | "remote"
+  | "last-known-good"
+  | "committed-ingest"
+  | "static-demo-fallback"
+  | "uninitialized"
+
+export interface ScheduleValidationSummary {
+  status: "ok" | "error"
+  checkedAt: string
+  errors?: ScheduleValidationError[]
+}
+
+let lastScheduleValidation: ScheduleValidationSummary = {
+  status: "ok",
+  checkedAt: new Date(0).toISOString(),
+}
+
+export interface DataFreshness {
+  lastUpdated: string
+  sourceName: string
+  isStale: boolean
+  /** How the active in-memory engine schedule was last bound. */
+  sourceUsed: ScheduleSourceUsed
+  /** True when a higher-priority source failed and a lower tier supplied the active schedule. */
+  fallbackUsed: boolean
+  /** When {@link sourceUsed} is `last-known-good`, timestamp of the persisted snapshot file (ISO). */
+  lastKnownGoodSavedAt?: string
+  gameCount?: number
+  /** Last ingest validation attempt (remote refresh, LKG load, or committed bind). */
+  validation?: ScheduleValidationSummary
+}
+
+function defaultStaleTtlMs(payloadTtl?: number): number {
+  const env = Number(process.env.GAMEPLAN_SCHEDULE_STALE_AFTER_MS ?? NaN)
+  if (Number.isFinite(env) && env > 0) return env
+  if (payloadTtl !== undefined && Number.isFinite(payloadTtl) && payloadTtl > 0) {
+    return payloadTtl
+  }
+  return 24 * 60 * 60 * 1000
+}
+
+function computeStale(lastUpdatedIso: string, ttlMs: number): boolean {
+  const t = Date.parse(lastUpdatedIso)
+  if (Number.isNaN(t)) return true
+  return Date.now() - t > ttlMs
+}
+
+/** Last validation summary (persists across failed binds). */
+export function getLastScheduleValidation(): ScheduleValidationSummary {
+  return lastScheduleValidation
+}
+
+/** Metadata for the active engine schedule (debug / ops / optional UI). */
+export function getDataFreshness(): DataFreshness {
+  if (!schedule) {
+    return {
+      lastUpdated: new Date(0).toISOString(),
+      sourceName: "uninitialized",
+      isStale: true,
+      sourceUsed: "uninitialized",
+      fallbackUsed: false,
+      validation: lastScheduleValidation,
+    }
+  }
+  return {
+    ...scheduleFreshness,
+    gameCount: schedule.length,
+    validation: scheduleFreshness.validation ?? lastScheduleValidation,
+  }
+}
+
+export function buildFreshnessForPayload(
+  payload: ScheduleIngestPayload,
+  sourceUsed: ScheduleSourceUsed,
+  fallbackUsed: boolean,
+  lastKnownGoodSavedAt?: string
+): DataFreshness {
+  const ttl = defaultStaleTtlMs(payload._meta.ttlMsSuggested)
+  return {
+    lastUpdated: payload._meta.lastUpdated,
+    sourceName: payload._meta.sourceName,
+    isStale: computeStale(payload._meta.lastUpdated, ttl),
+    sourceUsed,
+    fallbackUsed,
+    ...(lastKnownGoodSavedAt ? { lastKnownGoodSavedAt } : {}),
+  }
+}
+
+/**
+ * Replace in-memory engine games + freshness (server pipeline / ops refresh).
+ * Does not change the `Game` row shape consumed by `resolveGameAccess`.
+ */
+export function applyEngineScheduleFromPipeline(
+  games: Game[],
+  freshness: DataFreshness,
+  validation: ScheduleValidationSummary
+): void {
+  schedule = games
+  lastScheduleValidation = validation
+  scheduleFreshness = {
+    ...freshness,
+    gameCount: games.length,
+    validation,
+  }
+}
+
 function assertSchedule(): Game[] {
   if (!schedule) {
     throw new Error(
@@ -29,16 +153,64 @@ function assertSchedule(): Game[] {
 }
 
 /**
- * Wire the static demo schedule (or future: replace with API-backed loader).
+ * Load schedule from the canonical ingest pipeline, then bind engine games.
  * Called from `lib/data.ts` after `teams` is defined.
  */
 export function bindDemoSchedule(teams: Team[], referenceOverride?: Date): void {
-  schedule = buildStaticDemoEngineGames(teams, referenceOverride ?? new Date())
+  const anchor = referenceOverride ?? new Date()
+  const teamById = new Map(teams.map((t) => [t.id, t]))
+  const teamIds = teams.map((t) => t.id)
+  const checkedAt = new Date().toISOString()
+  try {
+    const v = validateScheduleIngest(defaultIngest as unknown, { allowedTeamIds: teamIds })
+    if (!v.ok) {
+      lastScheduleValidation = {
+        status: "error",
+        checkedAt,
+        errors: v.errors,
+      }
+      throw new Error(
+        `[GamePlan] Committed ingest validation failed: ${v.errors.map((e) => e.message).join("; ")}`
+      )
+    }
+    const normalized = normalizeScheduleIngest(v.payload, anchor, teamById)
+    const games = composeEngineGamesFromNormalized(normalized, teamById)
+    const okValidation: ScheduleValidationSummary = { status: "ok", checkedAt }
+    applyEngineScheduleFromPipeline(
+      games,
+      buildFreshnessForPayload(v.payload, "committed-ingest", false),
+      okValidation
+    )
+  } catch (e) {
+    console.warn("[GamePlan] Schedule pipeline failed; using static demo games.", e)
+    const fallbackValidation: ScheduleValidationSummary = {
+      status: "error",
+      checkedAt: new Date().toISOString(),
+      errors: [
+        {
+          code: "bind_fallback",
+          path: "",
+          message: e instanceof Error ? e.message : String(e),
+        },
+      ],
+    }
+    applyEngineScheduleFromPipeline(
+      buildStaticDemoEngineGames(teams, anchor),
+      {
+        lastUpdated: new Date().toISOString(),
+        sourceName: "static-demo-fallback",
+        isStale: false,
+        sourceUsed: "static-demo-fallback",
+        fallbackUsed: true,
+      },
+      fallbackValidation
+    )
+  }
 }
 
 /** Full `Game` rows used by `resolveGameAccess`, plan samples, and UI. */
 export function getEngineGames(): Game[] {
-  return assertSchedule()
+  return getActiveEngineGames(assertSchedule)
 }
 
 export function toNormalizedTeamSide(team: Team): NormalizedTeamSide {
@@ -117,7 +289,7 @@ export function getDefaultGamesDataSource(): GamesDataSource {
   }
 }
 
-function buildStaticDemoEngineGames(teams: Team[], today: Date): Game[] {
+export function buildStaticDemoEngineGames(teams: Team[], today: Date): Game[] {
   const todayAt = (hour: number, min = 0) => {
     const d = new Date(today)
     d.setHours(hour, min, 0, 0)

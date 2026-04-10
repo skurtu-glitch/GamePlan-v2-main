@@ -1,6 +1,6 @@
 "use client"
 
-import { use, useState, useEffect } from "react"
+import { use, useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import {
@@ -37,6 +37,10 @@ import type { WatchOption, ListenFeed } from "@/lib/types"
 import { cn } from "@/lib/utils"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import {
+  ScheduleHydrationSkeleton,
+  useSchedule,
+} from "@/components/providers/schedule-provider"
 import type { DemoUserState } from "@/lib/demo-user"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import { getAffiliateLink, hasAffiliateLanding } from "@/lib/affiliate"
@@ -308,9 +312,10 @@ export default function GameDetailPage({
   const { id } = use(params)
   const router = useRouter()
   const { state } = useDemoUser()
+  const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
   const [showWhyPanel, setShowWhyPanel] = useState(false)
 
-  const game = getGameDetail(id)
+  const game = useMemo(() => getGameDetail(id), [id, scheduleVersion])
   const upgradeScope = game ? optimizerScopeForGame(game, state) : "both"
   const upgradeImpactId = resolveGameDetailUpgradeImpactId(upgradeScope, state)
   const upgradeHref = upgradeImpactId ? `/plans/upgrade/${upgradeImpactId}` : null
@@ -333,6 +338,17 @@ export default function GameDetailPage({
     game?.listenFeeds.find((f) => f.type === "home" && f.url)?.url ??
     game?.listenFeeds.find((f) => f.url)?.url
   const formatted = useFormattedTime(game?.dateTime ?? "")
+
+  if (isScheduleHydrating) {
+    return (
+      <div className="min-h-screen bg-background pb-24">
+        <div className="mx-auto max-w-lg px-4 py-10">
+          <ScheduleHydrationSkeleton />
+        </div>
+        <BottomNav />
+      </div>
+    )
+  }
 
   if (!game) {
     return (

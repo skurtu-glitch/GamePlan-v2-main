@@ -14,3 +14,6 @@ next.user-config.*
 node_modules
 .next/
 .DS_Store
+
+# GamePlan last-known-good schedule snapshot (server disk)
+.gameplan/

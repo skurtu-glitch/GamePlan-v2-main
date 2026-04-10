@@ -5,6 +5,10 @@ import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import {
+  ScheduleHydrationSkeleton,
+  useSchedule,
+} from "@/components/providers/schedule-provider"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { 
@@ -64,6 +68,7 @@ function optimizerRoleExplanation(
 
 export default function PlansPage() {
   const { state } = useDemoUser()
+  const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
   const [selectedTeam, setSelectedTeam] = useState<OptimizerScope>("both")
   const plans = getPlansForScope(selectedTeam)
   const recommendations = useMemo(
@@ -73,7 +78,7 @@ export default function PlansPage() {
   const bestValuePlanId = recommendations.bestValuePlanId
   const currentCoverage = useMemo(
     () => getCurrentUserCoverageSummary(selectedTeam, state),
-    [selectedTeam, state]
+    [selectedTeam, state, scheduleVersion]
   )
 
   const monetizedPrimaryWithin24h = useMemo(() => {
@@ -85,7 +90,7 @@ export default function PlansPage() {
       )
     )
     return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, now))
-  }, [state.followedTeamIds])
+  }, [state.followedTeamIds, scheduleVersion])
 
   useEffect(() => {
     trackEvent(AnalyticsEvent.decisionShown, {
@@ -131,6 +136,11 @@ export default function PlansPage() {
         </div>
 
         {/* Your current setup — same resolver + schedule as Home / Assistant / My Teams */}
+        {isScheduleHydrating && state.connectedServiceIds.length > 0 ? (
+          <div className="mb-6">
+            <ScheduleHydrationSkeleton />
+          </div>
+        ) : (
         <Card className="mb-6 overflow-hidden border-border/50 bg-card/50 p-0">
           <div className="border-b border-border/40 bg-secondary/20 px-4 py-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -197,6 +207,7 @@ export default function PlansPage() {
             </p>
           </div>
         </Card>
+        )}
 
         {/* Plans List */}
         <div className="flex flex-col gap-5">

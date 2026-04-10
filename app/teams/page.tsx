@@ -6,6 +6,10 @@ import { BottomNav } from "@/components/bottom-nav"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
+import {
+  ScheduleHydrationSkeleton,
+  useSchedule,
+} from "@/components/providers/schedule-provider"
 import { getEngineGames, teams, teamsForFollowedIds } from "@/lib/data"
 import { getCurrentUserTeamCoverage } from "@/lib/current-user-coverage"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
@@ -33,6 +37,7 @@ function nextUpcomingGameForTeam(teamId: string, now: Date) {
 
 export default function TeamsPage() {
   const [mounted, setMounted] = useState(false)
+  const { isHydrating: isScheduleHydrating } = useSchedule()
   const { state, setDemoUserState } = useDemoUser()
   const userTeams = teamsForFollowedIds(state.followedTeamIds)
 
@@ -107,6 +112,9 @@ export default function TeamsPage() {
           <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Your Teams
           </h2>
+          {isScheduleHydrating ? (
+            <ScheduleHydrationSkeleton />
+          ) : (
           <div className="flex flex-col gap-4">
             {userTeams.map((team) => {
               const coverage = getCurrentUserTeamCoverage(team.id, state)
@@ -286,6 +294,7 @@ export default function TeamsPage() {
               )
             })}
           </div>
+          )}
         </section>
 
         {/* Follow more from catalog */}

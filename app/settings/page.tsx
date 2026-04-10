@@ -1,8 +1,11 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
+import { useDemoUser } from "@/components/providers/demo-user-provider"
+import { useSupabaseAuth } from "@/components/providers/supabase-auth-provider"
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import {
   Settings,
@@ -16,7 +19,13 @@ import {
   LogOut,
   Info,
   Users,
+  Cloud,
+  Check,
+  Loader2,
+  AlertCircle,
 } from "lucide-react"
+import { teamsForFollowedIds } from "@/lib/data"
+import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 
 interface SettingItemProps {
   icon: React.ElementType
@@ -72,23 +81,114 @@ function SettingItem({
 
   if (toggle) {
     return (
-      <button className="w-full" onClick={() => onChange?.(!value)}>
+      <button type="button" className="w-full" onClick={() => onChange?.(!value)}>
         {content}
       </button>
     )
   }
 
-  return <button className="w-full">{content}</button>
+  return <button type="button" className="w-full">{content}</button>
 }
 
 export default function SettingsPage() {
-  const [notifications, setNotifications] = useState(true)
-  const [location, setLocation] = useState(true)
-  const [darkMode, setDarkMode] = useState(true)
+  const { state, setDemoUserState, persistenceMode, cloudSyncStatus } = useDemoUser()
+  const { user, signOut, supabaseConfigured, ready: authReady } = useSupabaseAuth()
+  const [signingOut, setSigningOut] = useState(false)
+
+  const [zipInput, setZipInput] = useState(state.location.zipCode ?? "")
+  const [cityInput, setCityInput] = useState(state.location.city)
+  const [stateInput, setStateInput] = useState(state.location.state)
+
+  useEffect(() => {
+    setZipInput(state.location.zipCode ?? "")
+    setCityInput(state.location.city)
+    setStateInput(state.location.state)
+  }, [state.location.zipCode, state.location.city, state.location.state])
+
+  const coverage = useMemo(
+    () => getCurrentUserCoverageSummary("both", state),
+    [state]
+  )
+
+  const followedTeams = useMemo(
+    () => teamsForFollowedIds(state.followedTeamIds),
+    [state.followedTeamIds]
+  )
+
+  const followedLabel =
+    followedTeams.length > 0
+      ? followedTeams.map((t) => `${t.city} ${t.name}`).join(" · ")
+      : "No teams selected"
+
+  const connectedCount = state.connectedServiceIds.length
+
+  function applyLocation() {
+    const zip = zipInput.trim()
+    const city = cityInput.trim()
+    const st = stateInput.trim().toUpperCase().slice(0, 2)
+    setDemoUserState((prev) => ({
+      ...prev,
+      location: {
+        ...prev.location,
+        zipCode: zip || prev.location.zipCode,
+        city: city || prev.location.city,
+        state: st || prev.location.state,
+        marketLabel:
+          zip || city || st
+            ? [city || prev.location.city, st || prev.location.state].filter(Boolean).join(", ") +
+              (zip ? ` · ZIP ${zip}` : "")
+            : prev.location.marketLabel,
+      },
+    }))
+  }
+
+  async function handleSignOut() {
+    setSigningOut(true)
+    try {
+      await signOut()
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
+  const signedIn = Boolean(user)
+  const accountEmail = user?.email ?? ""
+
+  const syncHint = (() => {
+    if (persistenceMode !== "cloud") return null
+    if (cloudSyncStatus === "syncing") {
+      return (
+        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" />
+          Saving to your account…
+        </span>
+      )
+    }
+    if (cloudSyncStatus === "saved") {
+      return (
+        <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400">
+          <Check className="size-3.5" />
+          Saved to your account
+        </span>
+      )
+    }
+    if (cloudSyncStatus === "error") {
+      return (
+        <span className="flex items-center gap-1.5 text-xs font-medium text-amber-400">
+          <AlertCircle className="size-3.5" />
+          Couldn&apos;t reach the server — check your connection
+        </span>
+      )
+    }
+    return (
+      <span className="text-xs text-muted-foreground">
+        Changes sync to your account automatically.
+      </span>
+    )
+  })()
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      {/* Header */}
       <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur-lg">
         <div className="mx-auto flex h-16 max-w-lg items-center gap-3 px-4">
           <div className="flex size-10 items-center justify-center rounded-full bg-secondary">
@@ -96,15 +196,65 @@ export default function SettingsPage() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-foreground">Settings</h1>
-            <p className="text-xs text-muted-foreground">Customize your experience</p>
+            <p className="text-xs text-muted-foreground">Your GamePlan setup</p>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="mx-auto max-w-lg px-4 py-6">
-        
-        {/* Connected Services - Prominent */}
+        {/* Persistence + account */}
+        {authReady && supabaseConfigured && signedIn && (
+          <Card className="mb-6 overflow-hidden border-accent/25 bg-accent/5 p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <Cloud className="size-4 text-accent" />
+              <span className="text-sm font-medium text-foreground">Account-backed setup</span>
+            </div>
+            <p className="text-sm leading-relaxed text-muted-foreground">
+              Teams, location, streaming services, and preferences are stored with your GamePlan
+              account and load when you sign in on this or another device.
+            </p>
+            {accountEmail && (
+              <p className="mt-3 text-xs text-muted-foreground">
+                Signed in as{" "}
+                <span className="font-medium text-foreground">{accountEmail}</span>
+              </p>
+            )}
+            <div className="mt-3 border-t border-border/60 pt-3">{syncHint}</div>
+          </Card>
+        )}
+
+        {authReady && supabaseConfigured && !signedIn && (
+          <Card className="mb-6 border-border p-4">
+            <p className="text-sm font-medium text-foreground">Local-only on this device</p>
+            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              You&apos;re not signed in. Your setup is saved in this browser only. Sign in below to
+              back it up and use it on other devices.
+            </p>
+          </Card>
+        )}
+
+        {authReady && !supabaseConfigured && (
+          <Card className="mb-6 border-border p-4">
+            <p className="text-sm font-medium text-foreground">Cloud sync unavailable</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Add{" "}
+              <code className="rounded bg-secondary px-1 text-xs">
+                NEXT_PUBLIC_SUPABASE_URL
+              </code>{" "}
+              and{" "}
+              <code className="rounded bg-secondary px-1 text-xs">
+                NEXT_PUBLIC_SUPABASE_ANON_KEY
+              </code>{" "}
+              to enable sign-in. Until then, everything stays on this device.
+            </p>
+            <p className="mt-3 text-xs text-muted-foreground">
+              Storage mode:{" "}
+              <span className="font-medium text-foreground">this device only</span>
+            </p>
+          </Card>
+        )}
+
+        {/* Connected Services */}
         <section className="mb-6">
           <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Streaming Services
@@ -117,16 +267,157 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold text-foreground">Connected Services</p>
-                  <p className="text-sm text-muted-foreground">2 services connected</p>
+                  <p className="text-sm text-muted-foreground">
+                    {connectedCount === 0
+                      ? "No services connected"
+                      : `${connectedCount} service${connectedCount === 1 ? "" : "s"} connected`}
+                  </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-400">
-                    78% coverage
+                    {coverage.coveragePercent}% coverage
                   </span>
                   <ChevronRight className="size-5 text-muted-foreground" />
                 </div>
               </div>
             </Link>
+          </Card>
+        </section>
+
+        {/* Your setup: teams + location */}
+        <section className="mb-6">
+          <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
+            Your setup
+          </h2>
+          <Card className="space-y-4 overflow-hidden border-border p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs text-muted-foreground">
+                {persistenceMode === "cloud" ? (
+                  <>
+                    Storage:{" "}
+                    <span className="font-medium text-foreground">your account</span>
+                  </>
+                ) : (
+                  <>
+                    Storage:{" "}
+                    <span className="font-medium text-foreground">this device</span>
+                  </>
+                )}
+              </p>
+              {persistenceMode === "cloud" && cloudSyncStatus === "idle" && (
+                <span className="text-xs text-muted-foreground">Auto-save on</span>
+              )}
+            </div>
+
+            <Link
+              href="/teams"
+              className="flex items-center gap-3 rounded-lg border border-border bg-secondary/20 p-3 transition-colors hover:bg-secondary/40"
+            >
+              <div className="flex size-10 items-center justify-center rounded-full bg-secondary">
+                <Users className="size-5 text-muted-foreground" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-foreground">Followed teams</p>
+                <p className="truncate text-xs text-muted-foreground">{followedLabel}</p>
+              </div>
+              <ChevronRight className="size-5 shrink-0 text-muted-foreground" />
+            </Link>
+
+            <div>
+              <div className="mb-2 flex items-center gap-2">
+                <MapPin className="size-4 text-accent" />
+                <span className="text-sm font-medium text-foreground">Home location</span>
+              </div>
+              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
+                ZIP is used first for market hints; city and state refine regional availability and
+                blackout-style rules in the demo model.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label htmlFor="gp-zip" className="mb-1 block text-xs text-muted-foreground">
+                    ZIP code
+                  </label>
+                  <input
+                    id="gp-zip"
+                    inputMode="numeric"
+                    autoComplete="postal-code"
+                    value={zipInput}
+                    onChange={(e) => setZipInput(e.target.value)}
+                    className="h-10 w-full rounded-lg border border-border bg-secondary/40 px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-accent"
+                    placeholder="63101"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label htmlFor="gp-city" className="mb-1 block text-xs text-muted-foreground">
+                      City
+                    </label>
+                    <input
+                      id="gp-city"
+                      autoComplete="address-level2"
+                      value={cityInput}
+                      onChange={(e) => setCityInput(e.target.value)}
+                      className="h-10 w-full rounded-lg border border-border bg-secondary/40 px-3 text-sm text-foreground outline-none focus:ring-2 focus:ring-accent"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="gp-state" className="mb-1 block text-xs text-muted-foreground">
+                      State
+                    </label>
+                    <input
+                      id="gp-state"
+                      autoComplete="address-level1"
+                      value={stateInput}
+                      onChange={(e) => setStateInput(e.target.value)}
+                      maxLength={2}
+                      className="h-10 w-full rounded-lg border border-border bg-secondary/40 px-3 text-sm uppercase text-foreground outline-none focus:ring-2 focus:ring-accent"
+                      placeholder="MO"
+                    />
+                  </div>
+                </div>
+                <Button type="button" className="w-full" onClick={applyLocation}>
+                  Save location
+                </Button>
+              </div>
+            </div>
+
+            <div className="border-t border-border pt-3">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-4 text-left"
+                onClick={() =>
+                  setDemoUserState((prev) => ({
+                    ...prev,
+                    preferences: {
+                      ...prev.preferences,
+                      regionalLocationEnabled: !prev.preferences.regionalLocationEnabled,
+                    },
+                  }))
+                }
+              >
+                <div>
+                  <p className="text-sm font-medium text-foreground">
+                    Use location for regional rules
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    When off, market-specific video rules are not applied from your saved address.
+                  </p>
+                </div>
+                <div
+                  className={`h-6 w-11 shrink-0 rounded-full transition-colors ${
+                    state.preferences.regionalLocationEnabled ? "bg-accent" : "bg-secondary"
+                  }`}
+                >
+                  <div
+                    className={`size-5 translate-y-0.5 rounded-full bg-foreground transition-transform ${
+                      state.preferences.regionalLocationEnabled
+                        ? "translate-x-5"
+                        : "translate-x-0.5"
+                    }`}
+                  />
+                </div>
+              </button>
+            </div>
           </Card>
         </section>
 
@@ -137,39 +428,40 @@ export default function SettingsPage() {
           </h2>
           <Card className="overflow-hidden divide-y divide-border p-0">
             <SettingItem
-              icon={Users}
-              label="Teams Followed"
-              description="Blues, Cardinals"
-              href="/teams"
-            />
-            <SettingItem
-              icon={MapPin}
-              label="Location"
-              description="St. Louis, MO (for regional availability)"
-              toggle
-              value={location}
-              onChange={setLocation}
-            />
-            <SettingItem
               icon={Bell}
               label="Notifications"
               description="Game alerts and updates"
               toggle
-              value={notifications}
-              onChange={setNotifications}
+              value={state.preferences.notificationsEnabled}
+              onChange={() =>
+                setDemoUserState((prev) => ({
+                  ...prev,
+                  preferences: {
+                    ...prev.preferences,
+                    notificationsEnabled: !prev.preferences.notificationsEnabled,
+                  },
+                }))
+              }
             />
             <SettingItem
               icon={Moon}
               label="Dark Mode"
-              description="Always on"
+              description="Saved with your profile"
               toggle
-              value={darkMode}
-              onChange={setDarkMode}
+              value={state.preferences.darkMode}
+              onChange={() =>
+                setDemoUserState((prev) => ({
+                  ...prev,
+                  preferences: {
+                    ...prev.preferences,
+                    darkMode: !prev.preferences.darkMode,
+                  },
+                }))
+              }
             />
           </Card>
         </section>
 
-        {/* Data Clarity */}
         <section className="mb-6">
           <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             How It Works
@@ -187,7 +479,6 @@ export default function SettingsPage() {
           </Card>
         </section>
 
-        {/* Support */}
         <section className="mb-6">
           <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Support
@@ -206,22 +497,43 @@ export default function SettingsPage() {
           </Card>
         </section>
 
-        {/* Account */}
         <section>
           <h2 className="mb-3 text-sm font-medium uppercase tracking-wider text-muted-foreground">
             Account
           </h2>
-          <Card className="overflow-hidden p-0">
-            <button className="flex w-full items-center gap-4 p-4 text-left text-red-400 transition-colors hover:bg-red-500/10">
-              <div className="flex size-10 items-center justify-center rounded-full bg-red-500/15">
-                <LogOut className="size-5" />
-              </div>
-              <span className="font-medium">Sign Out</span>
-            </button>
+          <Card className="overflow-hidden divide-y divide-border p-0">
+            {supabaseConfigured && !signedIn && (
+              <Link href="/auth/sign-in">
+                <div className="flex w-full items-center gap-4 p-4 text-left transition-colors hover:bg-secondary/50">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-accent/15">
+                    <Cloud className="size-5 text-accent" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-foreground">Sign in</p>
+                    <p className="text-sm text-muted-foreground">
+                      Sync this setup to your account
+                    </p>
+                  </div>
+                  <ChevronRight className="size-5 text-muted-foreground" />
+                </div>
+              </Link>
+            )}
+            {signedIn && (
+              <button
+                type="button"
+                disabled={signingOut}
+                onClick={() => void handleSignOut()}
+                className="flex w-full items-center gap-4 p-4 text-left text-red-400 transition-colors hover:bg-red-500/10 disabled:opacity-50"
+              >
+                <div className="flex size-10 items-center justify-center rounded-full bg-red-500/15">
+                  <LogOut className="size-5" />
+                </div>
+                <span className="font-medium">{signingOut ? "Signing out…" : "Sign out"}</span>
+              </button>
+            )}
           </Card>
         </section>
 
-        {/* Version */}
         <p className="mt-8 text-center text-xs text-muted-foreground">
           GamePlan v1.0.0
         </p>

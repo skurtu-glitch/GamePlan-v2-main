@@ -9,7 +9,7 @@ import type {
   WatchQuestionAnswer,
 } from "@/lib/assistant-engine"
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
-import { userTeams, getEngineGames } from "@/lib/data"
+import { getEngineGames } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import { calculateIncrementalPlanValue } from "@/lib/optimizer-engine"
 import {
@@ -109,12 +109,9 @@ function stripWatchOnPrefix(label: string): string {
   return label.replace(/^\s*watch\s+on\s+/i, "").trim() || label
 }
 
-function userTeamIdSet(): Set<string> {
-  return new Set(userTeams.map((t) => t.id))
-}
-
 function watchGameUrgency(
   gameId: string | undefined,
+  followedTeamIds: readonly string[],
   now = new Date()
 ): { within24h: boolean; line: string | null } {
   if (!gameId) return { within24h: false, line: null }
@@ -124,7 +121,9 @@ function watchGameUrgency(
   if (within) {
     return {
       within24h: true,
-      line: missTonightUrgencyLine(urgencyTeamLabel(game, userTeamIdSet())),
+      line: missTonightUrgencyLine(
+        urgencyTeamLabel(game, new Set(followedTeamIds))
+      ),
     }
   }
   return { within24h: false, line: null }
@@ -132,7 +131,12 @@ function watchGameUrgency(
 
 export function formatAssistantDecision(
   input:
-    | { kind: "watch"; payload: WatchQuestionAnswer; gameId?: string }
+    | {
+        kind: "watch"
+        payload: WatchQuestionAnswer
+        gameId?: string
+        userState: DemoUserState
+      }
     | {
         kind: "plan"
         payload: PlanQuestionAnswer
@@ -150,6 +154,7 @@ export function formatAssistantDecision(
     const p = input.payload
     const { within24h, line: urgencyLine } = watchGameUrgency(
       input.gameId,
+      input.userState.followedTeamIds,
       new Date()
     )
     if (p.headline === "Game not found") {
@@ -498,7 +503,12 @@ function topIncrementalServiceLabel(
 
 export function formatAssistantNextAction(
   input:
-    | { kind: "watch"; payload: WatchQuestionAnswer; gameId?: string }
+    | {
+        kind: "watch"
+        payload: WatchQuestionAnswer
+        gameId?: string
+        userState: DemoUserState
+      }
     | {
         kind: "plan"
         payload: PlanQuestionAnswer
@@ -515,7 +525,11 @@ export function formatAssistantNextAction(
   if (input.kind === "watch") {
     const p = input.payload
     const gid = input.gameId
-    const { within24h } = watchGameUrgency(gid, new Date())
+    const { within24h } = watchGameUrgency(
+      gid,
+      input.userState.followedTeamIds,
+      new Date()
+    )
     if (p.headline === "Game not found") {
       return {
         primary: { ...p.primaryAction },

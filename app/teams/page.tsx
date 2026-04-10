@@ -1,11 +1,12 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
+import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
-import { userTeams, getEngineGames } from "@/lib/data"
+import { getEngineGames, teams, teamsForFollowedIds } from "@/lib/data"
 import { getCurrentUserTeamCoverage } from "@/lib/current-user-coverage"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import {
@@ -13,7 +14,8 @@ import {
   ChevronRight,
   Tv,
   Radio,
-  Plus,
+  UserMinus,
+  UserPlus,
 } from "lucide-react"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 
@@ -31,7 +33,28 @@ function nextUpcomingGameForTeam(teamId: string, now: Date) {
 
 export default function TeamsPage() {
   const [mounted, setMounted] = useState(false)
-  const { state } = useDemoUser()
+  const { state, setDemoUserState } = useDemoUser()
+  const userTeams = teamsForFollowedIds(state.followedTeamIds)
+
+  const otherTeams = useMemo(
+    () => teams.filter((t) => !state.followedTeamIds.includes(t.id)),
+    [state.followedTeamIds]
+  )
+
+  function toggleFollow(teamId: string, follow: boolean) {
+    setDemoUserState((prev) => {
+      const ids = prev.followedTeamIds
+      if (follow) {
+        if (ids.includes(teamId)) return prev
+        return { ...prev, followedTeamIds: [...ids, teamId] }
+      }
+      if (ids.length <= 1) return prev
+      return {
+        ...prev,
+        followedTeamIds: ids.filter((id) => id !== teamId),
+      }
+    })
+  }
 
   useEffect(() => {
     setMounted(true)
@@ -232,6 +255,25 @@ export default function TeamsPage() {
                     </Link>
                   )}
 
+                  <div className="flex flex-col gap-2 border-t border-border/50 p-4">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="w-full gap-2 border-border"
+                      disabled={state.followedTeamIds.length <= 1}
+                      onClick={() => toggleFollow(team.id, false)}
+                    >
+                      <UserMinus className="size-4" />
+                      Unfollow
+                    </Button>
+                    {state.followedTeamIds.length <= 1 && (
+                      <p className="text-center text-xs text-muted-foreground">
+                        Keep at least one team followed.
+                      </p>
+                    )}
+                  </div>
+
                   <Link href="/plans">
                     <div className="flex items-center justify-between border-t border-border/50 px-4 py-3 text-accent transition-colors hover:bg-accent/5">
                       <span className="text-sm font-medium">
@@ -246,24 +288,47 @@ export default function TeamsPage() {
           </div>
         </section>
 
-        {/* Add Team */}
+        {/* Follow more from catalog */}
         <section>
           <h2 className="mb-4 text-sm font-medium uppercase tracking-wider text-muted-foreground">
-            Add More Teams
+            More teams
           </h2>
-          <Card className="overflow-hidden border-border border-dashed bg-transparent p-0">
-            <button className="flex w-full items-center gap-4 p-5 text-left transition-colors hover:bg-secondary/30">
-              <div className="flex size-14 items-center justify-center rounded-xl border-2 border-dashed border-border bg-secondary/30">
-                <Plus className="size-6 text-muted-foreground" />
-              </div>
-              <div>
-                <p className="font-semibold text-foreground">Add a Team</p>
-                <p className="text-sm text-muted-foreground">
-                  Search for teams to follow
-                </p>
-              </div>
-            </button>
-          </Card>
+          {otherTeams.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              You&apos;re following every team in the catalog.
+            </p>
+          ) : (
+            <Card className="overflow-hidden divide-y divide-border p-0">
+              {otherTeams.map((team) => (
+                <div
+                  key={team.id}
+                  className="flex items-center gap-4 p-4"
+                >
+                  <div
+                    className="flex size-12 shrink-0 items-center justify-center rounded-xl text-sm font-bold text-white"
+                    style={{ backgroundColor: team.primaryColor }}
+                  >
+                    {team.abbreviation}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold text-foreground">{team.name}</p>
+                    <p className="text-sm text-muted-foreground">
+                      {team.city} · {team.sport}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="shrink-0 gap-1.5"
+                    onClick={() => toggleFollow(team.id, true)}
+                  >
+                    <UserPlus className="size-4" />
+                    Follow
+                  </Button>
+                </div>
+              ))}
+            </Card>
+          )}
         </section>
       </main>
 

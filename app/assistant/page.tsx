@@ -32,7 +32,7 @@ import {
   formatAssistantWhy,
 } from "@/lib/assistant-format"
 import type { DemoUserState } from "@/lib/demo-user"
-import { userTeams } from "@/lib/data"
+import { teamsForFollowedIds } from "@/lib/data"
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
 import { formatServiceIdList } from "@/lib/streaming-service-ids"
@@ -227,7 +227,10 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
 
 function AssistantContextBar({ userState }: { userState: DemoUserState }) {
   const line = useMemo(() => {
-    const teamLine = `${userTeams.map((t) => t.name).join(" + ")} · both teams`
+    const names = teamsForFollowedIds(userState.followedTeamIds)
+      .map((t) => t.name)
+      .join(" + ")
+    const teamLine = `${names || "Your teams"} · followed teams`
     const ids = userState.connectedServiceIds
     const svc =
       ids.length === 0
@@ -722,12 +725,14 @@ function EngineResponseCard({
       kind: "watch",
       payload: p,
       gameId: watchGameId,
+      userState,
     })
     const why = formatAssistantWhy({ kind: "watch", payload: p })
     const next = formatAssistantNextAction({
       kind: "watch",
       payload: p,
       gameId: watchGameId,
+      userState,
     })
     return (
       <Card className="w-full overflow-hidden rounded-xl border-border/80 bg-card shadow-md">

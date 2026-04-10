@@ -311,7 +311,7 @@ export default function GameDetailPage({
   const [showWhyPanel, setShowWhyPanel] = useState(false)
 
   const game = getGameDetail(id)
-  const upgradeScope = game ? optimizerScopeForGame(game) : "both"
+  const upgradeScope = game ? optimizerScopeForGame(game, state) : "both"
   const upgradeImpactId = resolveGameDetailUpgradeImpactId(upgradeScope, state)
   const upgradeHref = upgradeImpactId ? `/plans/upgrade/${upgradeImpactId}` : null
   const access = game ? resolveGameAccess(game, state) : null

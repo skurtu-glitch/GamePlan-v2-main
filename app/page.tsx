@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import { ACCESS_RULES_SEE_PLANS } from "@/lib/access-rules"
 import {
@@ -44,13 +44,6 @@ import {
   Sparkles,
   Check,
 } from "lucide-react"
-
-// Filter games for user's teams (demo: Blues + Cardinals)
-const userGames = getEngineGames().filter((game) =>
-  userTeams.some(
-    (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
-  )
-)
 
 // Determine coverage state
 type CoverageState = 
@@ -214,6 +207,15 @@ export default function HomePage() {
   const [scheduleTick, setScheduleTick] = useState(0)
   const hasConnectedServices = state.connectedServiceIds.length > 0
 
+  const userGames = useMemo(() => {
+    const followed = teamsForFollowedIds(state.followedTeamIds)
+    return getEngineGames().filter((game) =>
+      followed.some(
+        (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
+      )
+    )
+  }, [state.followedTeamIds])
+
   useEffect(() => {
     const id = window.setInterval(() => {
       setScheduleTick((t) => t + 1)
@@ -232,7 +234,7 @@ export default function HomePage() {
       return gameDate.toDateString() !== now.toDateString()
     })
     return { tonightsGames: tonights, upcomingGames: upcoming }
-  }, [scheduleTick])
+  }, [scheduleTick, userGames])
 
   const { watchableTonight, listenOnlyTonight, unavailableTonight } = useMemo(() => {
     let w = 0
@@ -265,7 +267,7 @@ export default function HomePage() {
   )
 
   const homeSuggestedConversionBanner = useMemo(() => {
-    const teamIds = new Set(userTeams.map((t) => t.id))
+    const teamIds = new Set(state.followedTeamIds)
     const now = new Date()
     const upcoming = userGames
       .filter((g) => new Date(g.dateTime).getTime() >= now.getTime())
@@ -276,7 +278,7 @@ export default function HomePage() {
       return missTonightUrgencyLine(urgencyTeamLabel(upcoming, teamIds))
     }
     return seasonUnlockBanner()
-  }, [scheduleTick])
+  }, [scheduleTick, userGames, state.followedTeamIds])
 
   useEffect(() => {
     setMounted(true)

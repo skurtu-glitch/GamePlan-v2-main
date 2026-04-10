@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
@@ -78,13 +78,14 @@ export default function PlansPage() {
 
   const monetizedPrimaryWithin24h = useMemo(() => {
     const now = new Date()
+    const followed = teamsForFollowedIds(state.followedTeamIds)
     const games = getEngineGames().filter((game) =>
-      userTeams.some(
+      followed.some(
         (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
       )
     )
     return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, now))
-  }, [])
+  }, [state.followedTeamIds])
 
   useEffect(() => {
     trackEvent(AnalyticsEvent.decisionShown, {

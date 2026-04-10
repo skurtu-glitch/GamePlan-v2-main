@@ -1,4 +1,5 @@
 import type { Team, StreamingPlan } from "./types"
+import { DEFAULT_FOLLOWED_TEAM_IDS } from "./demo-user"
 import { PROVIDER_LABEL, serviceDisplayName } from "./streaming-service-ids"
 import { bindDemoSchedule, getEngineGames } from "./data-sources/games"
 
@@ -41,9 +42,24 @@ export const teams: Team[] = [
   },
 ]
 
-export const userTeams = teams.filter((t) =>
-  ["stl-blues", "stl-cardinals"].includes(t.id)
-)
+/** Map catalog ids to `Team` rows; unknown ids skipped. Preserves `ids` order. */
+export function teamsForFollowedIds(ids: readonly string[]): Team[] {
+  const byId = new Map(teams.map((t) => [t.id, t]))
+  const out: Team[] = []
+  const source =
+    ids.length > 0 ? ids : (DEFAULT_FOLLOWED_TEAM_IDS as readonly string[])
+  for (const id of source) {
+    const row = byId.get(id)
+    if (row) out.push(row)
+  }
+  return out
+}
+
+/**
+ * Default followed teams for static call sites and legacy imports.
+ * Prefer `teamsForFollowedIds(state.followedTeamIds)` in UI.
+ */
+export const userTeams = teamsForFollowedIds(DEFAULT_FOLLOWED_TEAM_IDS)
 
 bindDemoSchedule(teams)
 

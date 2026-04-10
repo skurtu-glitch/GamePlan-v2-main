@@ -38,7 +38,7 @@ import {
   trackEvent,
 } from "@/lib/analytics"
 import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import {
   chooseMonetizedPrimaryLabel,
   formatBundlePlusList,
@@ -91,13 +91,14 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
 
   const monetizedPrimaryWithin24h = useMemo(() => {
     const t = new Date()
+    const followed = teamsForFollowedIds(state.followedTeamIds)
     const games = getEngineGames().filter((game) =>
-      userTeams.some(
+      followed.some(
         (tm) => tm.id === game.homeTeam.id || tm.id === game.awayTeam.id
       )
     )
     return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, t))
-  }, [])
+  }, [state.followedTeamIds])
 
   const primaryCtaLabel = useMemo(
     () =>

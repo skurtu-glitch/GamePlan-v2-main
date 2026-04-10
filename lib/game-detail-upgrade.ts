@@ -3,15 +3,20 @@
  */
 
 import type { DemoUserState } from "@/lib/demo-user"
-import { userTeams } from "@/lib/data"
+import { teamsForFollowedIds } from "@/lib/data"
 import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
 import type { Game } from "@/lib/types"
 import { getUpgradeImpactIdForDestinationPlan } from "@/lib/upgrade-impact"
 
-/** Optimizer scope for a game the demo user cares about (userTeams ∩ matchup). */
-export function optimizerScopeForGame(game: Game): OptimizerScope {
-  const followIds = new Set(userTeams.map((t) => t.id))
+/** Optimizer scope for a game the user cares about (followed teams ∩ matchup). */
+export function optimizerScopeForGame(
+  game: Game,
+  userState: DemoUserState
+): OptimizerScope {
+  const followIds = new Set(
+    teamsForFollowedIds(userState.followedTeamIds).map((t) => t.id)
+  )
   const involved = [game.homeTeam.id, game.awayTeam.id].filter((id) =>
     followIds.has(id)
   )

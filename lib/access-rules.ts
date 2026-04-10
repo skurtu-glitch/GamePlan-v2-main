@@ -30,6 +30,12 @@ export function videoProviderIdsOrdered(game: Game): string[] {
   return game.watch.providers ?? []
 }
 
+/** When regional rules are disabled, behave like an unknown market (existing code paths, no rule changes). */
+function effectiveUserHomeMarket(userState: DemoUserState) {
+  if (!userState.preferences.regionalLocationEnabled) return null
+  return resolveUserHomeMarket(userState.location)
+}
+
 export function userEntitledToService(userState: DemoUserState, serviceId: string): boolean {
   return userState.connectedServiceIds.includes(serviceId)
 }
@@ -83,7 +89,7 @@ export function videoProviderIdsViableForLocation(
   userState: DemoUserState
 ): string[] {
   const ordered = videoProviderIdsOrdered(game)
-  const userMarket = resolveUserHomeMarket(userState.location)
+  const userMarket = effectiveUserHomeMarket(userState)
   if (userMarket === null || !hasMappedHomeTeamMarket(game)) {
     return ordered
   }
@@ -99,7 +105,7 @@ function applyMarketAwareMatchedFilter(
   userState: DemoUserState,
   matchedServiceIds: readonly string[]
 ): { effective: string[]; message?: string } {
-  const userMarket = resolveUserHomeMarket(userState.location)
+  const userMarket = effectiveUserHomeMarket(userState)
   if (
     userMarket === null ||
     !hasMappedHomeTeamMarket(game) ||
@@ -166,7 +172,7 @@ export function describeWatchProviderRow(
   }
 
   const kind = classifyVideoProviderKind(serviceId)
-  const userMarket = resolveUserHomeMarket(userState.location)
+  const userMarket = effectiveUserHomeMarket(userState)
   const hm = homeTeamMarketCode(game)
   const rulesApply = userMarket !== null && hm !== null
   const inHomeMarket = rulesApply && isUserInHomeTeamMarket(game, userMarket)

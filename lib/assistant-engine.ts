@@ -2,7 +2,7 @@
  * Deterministic Assistant layer: structured answers from resolver + optimizer (no LLM).
  */
 
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import type { Game } from "@/lib/types"
 import type { DemoUserState } from "@/lib/demo-user"
 import {
@@ -382,9 +382,10 @@ export function createSuggestedPrompts(userState: DemoUserState): SuggestedPromp
   const prompts: SuggestedPrompt[] = []
 
   const now = new Date()
+  const followed = teamsForFollowedIds(userState.followedTeamIds)
   const tonights = getEngineGames().filter((game) => {
     if (
-      !userTeams.some(
+      !followed.some(
         (t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id
       )
     ) {

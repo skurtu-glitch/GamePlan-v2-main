@@ -5,7 +5,7 @@
 
 import { answerMissingGamesQuestion } from "@/lib/assistant-engine"
 import type { DemoUserState } from "@/lib/demo-user"
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 import {
   calculateIncrementalPlanValue,
@@ -41,9 +41,10 @@ function formatMatchup(game: Game): string {
   return `${game.awayTeam.city} ${game.awayTeam.name} @ ${game.homeTeam.city} ${game.homeTeam.name}`
 }
 
-function userTeamGames(): Game[] {
+function userTeamGames(userState: DemoUserState): Game[] {
+  const followed = teamsForFollowedIds(userState.followedTeamIds)
   return getEngineGames().filter((game) =>
-    userTeams.some(
+    followed.some(
       (t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id
     )
   )
@@ -57,7 +58,7 @@ function getNextNonWatchableGame(
   now: Date
 ): { game: Game; status: string; fixLabel: string } | null {
   const t0 = now.getTime()
-  const upcoming = userTeamGames()
+  const upcoming = userTeamGames(userState)
     .filter((g) => new Date(g.dateTime).getTime() >= t0)
     .sort(
       (a, b) =>
@@ -154,11 +155,15 @@ function buildPlanRecommendationInsight(
 
 function buildCoverageSummaryInsight(userState: DemoUserState): UserInsight {
   const b = getCurrentUserCoverageSummary(INSIGHT_SCOPE, userState)
+  const label =
+    teamsForFollowedIds(userState.followedTeamIds)
+      .map((t) => t.name)
+      .join(" + ") || "Your teams"
   return {
     id: "insight-coverage-baseline",
     type: "coverage-summary",
     headline: "Schedule coverage · both teams",
-    summary: `Blues + Cardinals: with your current services, ${b.gamesWatchable} of ${b.totalGames} games are watchable on your in-app schedule (${b.coveragePercent}%).`,
+    summary: `${label}: with your current services, ${b.gamesWatchable} of ${b.totalGames} games are watchable on your in-app schedule (${b.coveragePercent}%).`,
     primaryAction: { label: "View plans", href: "/plans" },
     secondaryAction: { label: "Assistant", href: "/assistant" },
   }

@@ -11,6 +11,7 @@ import {
   calculateIncrementalPlanValue,
   classifyRecommendedPlans,
 } from "@/lib/optimizer-engine"
+import { teamsForFollowedIds } from "@/lib/data"
 import {
   getOptimizerPlanById,
   type OptimizerPlan,
@@ -43,9 +44,10 @@ export function formatHomeWowMetric(
   summary: Pick<
     CurrentUserCoverageSummary,
     "gamesWatchable" | "totalGames" | "coveragePercent"
-  >
+  >,
+  followedTeamLabel: string
 ): string {
-  return `Across Blues + Cardinals: ${summary.gamesWatchable} of ${summary.totalGames} games watchable on your in-app schedule (${summary.coveragePercent}%)`
+  return `Across ${followedTeamLabel}: ${summary.gamesWatchable} of ${summary.totalGames} games watchable on your in-app schedule (${summary.coveragePercent}%)`
 }
 
 const HOME_BEST_VALUE_PLAN_HEADLINE =
@@ -140,7 +142,11 @@ export function buildHomeSuggestedInsight(
 
   const ctaLabel = HOME_SUGGESTED_CTA_LABEL
   const live = getCurrentUserCoverageSummary(scope, userState)
-  const wowMetricLine = formatHomeWowMetric(live)
+  const followedLabel =
+    teamsForFollowedIds(userState.followedTeamIds)
+      .map((t) => t.name)
+      .join(" + ") || "your teams"
+  const wowMetricLine = formatHomeWowMetric(live, followedLabel)
   const classified = classifyRecommendedPlans(scope, userState)
   const bestPlan =
     classified.bestValuePlanId != null
@@ -159,7 +165,7 @@ export function buildHomeSuggestedInsight(
         "Your connected services match the Full Coverage catalog plan for Blues + Cardinals (both teams).",
       supportingLine:
         live.totalGames > 0
-          ? `Both teams: ${live.gamesWatchable} of ${live.totalGames} games on your in-app schedule are watchable with your services.`
+          ? `${followedLabel}: ${live.gamesWatchable} of ${live.totalGames} games on your in-app schedule are watchable with your services.`
           : undefined,
       ctaLabel,
       ctaHref: `/plans/${fullPlan.id}`,

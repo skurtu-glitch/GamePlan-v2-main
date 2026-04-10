@@ -29,7 +29,7 @@ import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
 import { classifyRecommendedPlans, getCurrentCoverageBaseline } from "@/lib/optimizer-engine"
-import { getEngineGames, userTeams } from "@/lib/data"
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import {
   getAffiliateLink,
   hasAffiliateLanding,
@@ -109,13 +109,14 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
 
   const monetizedPrimaryWithin24h = useMemo(() => {
     const t = new Date()
+    const followed = teamsForFollowedIds(state.followedTeamIds)
     const games = getEngineGames().filter((game) =>
-      userTeams.some(
+      followed.some(
         (tm) => tm.id === game.homeTeam.id || tm.id === game.awayTeam.id
       )
     )
     return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, t))
-  }, [])
+  }, [state.followedTeamIds])
 
   const unlockDelta = useMemo(() => {
     if (!plan) return 0

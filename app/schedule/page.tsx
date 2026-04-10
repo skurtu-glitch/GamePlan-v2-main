@@ -11,16 +11,18 @@ import {
 } from "@/components/providers/schedule-provider"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
-import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import {
   followedTeamNamesPlus,
   followedTeamsScopePhrase,
 } from "@/lib/followed-teams-copy"
 import {
+  formatScheduledGamesWatchSummaryLine,
+  formatUpcomingWatchSecondaryLine,
+  getFollowedTeamGames,
   groupScheduleGamesByLeague,
   sortGamesByStartTime,
-  upcomingSampleWatchCounts,
 } from "@/lib/home-upcoming-schedule"
+import { summarizeResolverCoverageForGames } from "@/lib/current-user-coverage"
 import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react"
 
@@ -28,21 +30,37 @@ export default function SchedulePage() {
   const { state } = useDemoUser()
   const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
   const [mounted, setMounted] = useState(false)
-  const hasConnectedServices = state.connectedServiceIds.length > 0
-  const scheduleBlocked = isScheduleHydrating && hasConnectedServices
+  const scheduleBlocked =
+    isScheduleHydrating && state.connectedServiceIds.length > 0
 
-  const followedGames = useMemo(() => {
-    const followed = teamsForFollowedIds(state.followedTeamIds)
-    return getEngineGames().filter((game) =>
-      followed.some((t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id)
-    )
-  }, [state.followedTeamIds, scheduleVersion])
+  const followedGames = useMemo(
+    () => getFollowedTeamGames(state.followedTeamIds),
+    [state.followedTeamIds, scheduleVersion]
+  )
 
   const sortedGames = useMemo(() => sortGamesByStartTime(followedGames), [followedGames])
   const byLeague = useMemo(() => groupScheduleGamesByLeague(sortedGames), [sortedGames])
-  const watchCounts = useMemo(
-    () => upcomingSampleWatchCounts(sortedGames, state),
+  const coverage = useMemo(
+    () => summarizeResolverCoverageForGames(sortedGames, state),
     [sortedGames, state]
+  )
+  const scheduleSummaryPrimary = useMemo(
+    () =>
+      formatScheduledGamesWatchSummaryLine(
+        coverage.gamesWatchable,
+        coverage.totalGames,
+        coverage.totalGames > 0 ? coverage.coveragePercent : undefined
+      ),
+    [
+      coverage.coveragePercent,
+      coverage.gamesWatchable,
+      coverage.totalGames,
+    ]
+  )
+  const scheduleSummarySecondary = useMemo(
+    () =>
+      formatUpcomingWatchSecondaryLine(coverage.gamesWatchable, coverage.totalGames),
+    [coverage.gamesWatchable, coverage.totalGames]
   )
   const recommendations = useMemo(
     () => classifyRecommendedPlans("both", state),
@@ -105,16 +123,30 @@ export default function SchedulePage() {
 
         {!scheduleBlocked && (
           <>
-            <div className="mb-6 flex flex-col gap-1">
-              <p className="text-sm font-medium leading-snug text-foreground/90">
-                <span className="tabular-nums">{watchCounts.total}</span> games on your calendar
-                {" · "}
-                <span className="tabular-nums">{watchCounts.watchable}</span> watchable on video
-              </p>
-              <p className="text-[11px] leading-snug text-muted-foreground">
-                Same access rules as Home — per game via your subscriptions and market settings.
-              </p>
-            </div>
+            {sortedGames.length > 0 && (
+              <div className="mb-6 flex flex-col gap-1">
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+                  Your schedule
+                </h2>
+                <p className="text-[11px] text-muted-foreground">
+                  {followedTeamNamesPlus(state.followedTeamIds)} ·{" "}
+                  {followedTeamsScopePhrase(state.followedTeamIds)}
+                </p>
+                {scheduleSummaryPrimary && (
+                  <p className="text-xs font-medium leading-snug text-foreground/90">
+                    {scheduleSummaryPrimary}
+                  </p>
+                )}
+                {scheduleSummarySecondary && (
+                  <p className="text-[11px] leading-snug text-muted-foreground">
+                    {scheduleSummarySecondary}
+                  </p>
+                )}
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  Same access rules as Home — per game via your subscriptions and market settings.
+                </p>
+              </div>
+            )}
 
             {sortedGames.length === 0 ? (
               <Card className="overflow-hidden border-border bg-card p-0">
@@ -137,10 +169,10 @@ export default function SchedulePage() {
             ) : (
               <div className="flex flex-col gap-5">
                 {byLeague.nhl.length > 0 && (
-                  <section>
-                    <h2 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <div>
+                    <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       NHL
-                    </h2>
+                    </h3>
                     <div className="flex flex-col gap-3">
                       {byLeague.nhl.map((game) => (
                         <ScheduleGameRow
@@ -155,13 +187,13 @@ export default function SchedulePage() {
                         />
                       ))}
                     </div>
-                  </section>
+                  </div>
                 )}
                 {byLeague.mlb.length > 0 && (
-                  <section>
-                    <h2 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+                  <div>
+                    <h3 className="mb-2.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
                       MLB
-                    </h2>
+                    </h3>
                     <div className="flex flex-col gap-3">
                       {byLeague.mlb.map((game) => (
                         <ScheduleGameRow
@@ -176,7 +208,7 @@ export default function SchedulePage() {
                         />
                       ))}
                     </div>
-                  </section>
+                  </div>
                 )}
               </div>
             )}

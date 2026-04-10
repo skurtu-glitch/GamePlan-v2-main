@@ -9,7 +9,6 @@ import {
   ScheduleHydrationSkeleton,
   useSchedule,
 } from "@/components/providers/schedule-provider"
-import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import {
   followedTeamNamesPlus,
   followedTeamsHeaderLine,
@@ -18,6 +17,7 @@ import {
 import {
   formatUpcomingWatchSecondaryLine,
   formatUpcomingWatchSummaryLine,
+  getFollowedTeamGames,
   groupUpcomingSampleByLeague,
   HOME_UPCOMING_SAMPLE_CAP,
   sortGamesByStartTime,
@@ -228,14 +228,10 @@ export default function HomePage() {
   /** Avoid flashing bundled schedule summaries while canonical API hydrates. */
   const scheduleBlocked = isScheduleHydrating && hasConnectedServices
 
-  const userGames = useMemo(() => {
-    const followed = teamsForFollowedIds(state.followedTeamIds)
-    return getEngineGames().filter((game) =>
-      followed.some(
-        (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
-      )
-    )
-  }, [state.followedTeamIds, scheduleVersion])
+  const userGames = useMemo(
+    () => getFollowedTeamGames(state.followedTeamIds),
+    [state.followedTeamIds, scheduleVersion]
+  )
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -755,6 +751,14 @@ export default function HomePage() {
             <Link
               href="/schedule"
               className="inline-flex items-center gap-1 text-sm font-medium text-accent"
+              onClick={() =>
+                trackEvent(AnalyticsEvent.ctaSecondaryClick, {
+                  ...analyticsBase("home", state, {
+                    href: "/schedule",
+                    label: "view_full_schedule",
+                  }),
+                })
+              }
             >
               View full schedule
               <ChevronRight className="size-4" />

@@ -2,9 +2,18 @@
  * Home upcoming list: sort, cap, league grouping, and resolver-aligned watch counts.
  */
 
+import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
 import type { Game } from "@/lib/types"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
+
+/** Engine games involving any of the user’s followed catalog teams (same scope as Home / Schedule). */
+export function getFollowedTeamGames(followedTeamIds: readonly string[]): Game[] {
+  const followed = teamsForFollowedIds(followedTeamIds)
+  return getEngineGames().filter((game) =>
+    followed.some((t) => t.id === game.homeTeam.id || t.id === game.awayTeam.id)
+  )
+}
 
 /** Max upcoming rows shown on Home (after tonight), across leagues. */
 export const HOME_UPCOMING_SAMPLE_CAP = 10
@@ -33,8 +42,8 @@ export function groupUpcomingSampleByLeague(games: readonly Game[]): {
 export const groupScheduleGamesByLeague = groupUpcomingSampleByLeague
 
 /**
- * Watchable count for the Home upcoming sample using {@link resolveGameAccess}
- * (same path as row CTAs).
+ * Watchable count for any game list using {@link resolveGameAccess} (same path as row CTAs).
+ * Used for Home’s capped upcoming sample and the full Schedule list.
  */
 export function upcomingSampleWatchCounts(
   games: readonly Game[],
@@ -62,4 +71,26 @@ export function formatUpcomingWatchSummaryLine(watchable: number, total: number)
 export function formatUpcomingWatchSecondaryLine(watchable: number, total: number): string | null {
   if (total <= 0 || watchable >= total) return null
   return "The rest are listen-only or not available on video with your current subscriptions."
+}
+
+/** Full Schedule summary line (same resolver semantics as rows; pass % from `summarizeResolverCoverageForGames` when desired). */
+export function formatScheduledGamesWatchSummaryLine(
+  watchable: number,
+  total: number,
+  coveragePercent?: number
+): string {
+  if (total <= 0) return ""
+  let core: string
+  if (watchable === total) {
+    core =
+      total === 1
+        ? "You can watch the 1 scheduled game on video with your current setup"
+        : `You can watch all ${total} scheduled games on video with your current setup`
+  } else {
+    core = `You can watch ${watchable} of ${total} scheduled games on video with your current setup`
+  }
+  if (coveragePercent !== undefined) {
+    return `${core} (${coveragePercent}% on video).`
+  }
+  return `${core}.`
 }

@@ -16,10 +16,8 @@ import {
   Zap
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import {
-  classifyRecommendedPlans,
-  getCurrentCoverageBaseline,
-} from "@/lib/optimizer-engine"
+import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
+import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
 import {
   getAnnualCost,
   getPlansForScope,
@@ -73,8 +71,8 @@ export default function PlansPage() {
     [selectedTeam, state]
   )
   const bestValuePlanId = recommendations.bestValuePlanId
-  const currentBaseline = useMemo(
-    () => getCurrentCoverageBaseline(selectedTeam, state),
+  const currentCoverage = useMemo(
+    () => getCurrentUserCoverageSummary(selectedTeam, state),
     [selectedTeam, state]
   )
 
@@ -131,31 +129,37 @@ export default function PlansPage() {
           ))}
         </div>
 
-        {/* Your current setup — season catalog coverage from connected services (same basis as catalog plans) */}
+        {/* Your current setup — same resolver + schedule as Home / Assistant / My Teams */}
         <Card className="mb-6 overflow-hidden border-border/50 bg-card/50 p-0">
           <div className="border-b border-border/40 bg-secondary/20 px-4 py-2">
             <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Your Current Plan
             </p>
             <p className="text-[10px] text-muted-foreground">
-              Season catalog · aligned to your connected services (or closest match)
+              Live schedule in this scope · subscriptions + market rules
             </p>
+            {selectedTeam !== "both" && (
+              <p className="mt-1 text-[10px] text-muted-foreground/90">
+                Home always summarizes Blues + Cardinals together; this card follows your tab
+                above.
+              </p>
+            )}
           </div>
           <div className="p-4">
             <div className="mb-4 flex items-end justify-between gap-3">
               <div>
                 <p className="text-3xl font-bold tabular-nums text-foreground">
-                  {currentBaseline.coveragePercent}
+                  {currentCoverage.coveragePercent}
                   <span className="text-lg font-semibold text-muted-foreground">%</span>
                 </p>
                 <p className="text-xs text-muted-foreground">Watchable coverage</p>
               </div>
               <div className="text-right">
                 <p className="text-lg font-semibold tabular-nums text-foreground">
-                  {currentBaseline.gamesWatchable}
+                  {currentCoverage.gamesWatchable}
                   <span className="text-sm font-normal text-muted-foreground">
                     {" "}
-                    / {currentBaseline.totalGames}
+                    / {currentCoverage.totalGames}
                   </span>
                 </p>
                 <p className="text-[10px] text-muted-foreground">games watchable</p>
@@ -188,7 +192,7 @@ export default function PlansPage() {
               <ChevronRight className="size-4" />
             </Link>
             <p className="mt-2 text-xs text-muted-foreground">
-              Catalog plans below use the same season game totals for apples-to-apples comparison.
+              Catalog plans below use season totals for tier comparison; the card above matches your in-app schedule rows.
             </p>
           </div>
         </Card>

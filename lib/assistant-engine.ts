@@ -6,10 +6,13 @@ import { getEngineGames, userTeams } from "@/lib/data"
 import type { Game } from "@/lib/types"
 import type { DemoUserState } from "@/lib/demo-user"
 import {
+  getCurrentUserCoverageSummary,
+  getEngineGamesForOptimizerScope,
+} from "@/lib/current-user-coverage"
+import {
   classifyRecommendedPlans,
   calculateIncrementalPlanValue,
   estimateMonthlyCostForConnectedServices,
-  getCurrentCoverageBaseline,
 } from "@/lib/optimizer-engine"
 import { getOptimizerPlanById, type OptimizerScope } from "@/lib/optimizer-plans"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
@@ -61,6 +64,7 @@ export interface MissingGamesAnswer {
   type: "missing-games"
   headline: string
   summary: string
+  /** Live schedule in scope via {@link getCurrentUserCoverageSummary} (resolver, same as Home / Plans card). */
   baseline: {
     scope: OptimizerScope
     gamesWatchable: number
@@ -112,25 +116,12 @@ const SCOPE_HEADLINE: Record<OptimizerScope, string> = {
   both: "both teams",
 }
 
+/** Same engine rows as {@link getCurrentUserCoverageSummary} for `scope` (not filtered by followed teams). */
 function gamesMatchingScope(scope: OptimizerScope): Game[] {
-  const userRelevant = getEngineGames().filter((game) =>
-    userTeams.some(
-      (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
-    )
-  )
-  if (scope === "both") return userRelevant
-  if (scope === "blues") {
-    return userRelevant.filter(
-      (g) => g.homeTeam.id === "stl-blues" || g.awayTeam.id === "stl-blues"
-    )
-  }
-  return userRelevant.filter(
-    (g) =>
-      g.homeTeam.id === "stl-cardinals" || g.awayTeam.id === "stl-cardinals"
-  )
+  return getEngineGamesForOptimizerScope(scope)
 }
 
-/** Rolling window of engine games for the optional detail list (not used for season coverage totals). */
+/** Rolling 7-day window on the same scope set as season coverage summaries. */
 function gamesInRollingWeek(scope: OptimizerScope, now = new Date()): Game[] {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
@@ -281,9 +272,9 @@ export function answerPlanQuestion(
     )
   }
 
-  const seasonBaseline = getCurrentCoverageBaseline(scope, userState)
+  const live = getCurrentUserCoverageSummary(scope, userState)
   reasons.push(
-    `This season with your current services: ${seasonBaseline.gamesWatchable} of ${seasonBaseline.totalGames} games watchable (${seasonBaseline.coveragePercent}%).`
+    `On your schedule with your current services: ${live.gamesWatchable} of ${live.totalGames} games watchable (${live.coveragePercent}%).`
   )
 
   return {
@@ -319,7 +310,7 @@ export function answerMissingGamesQuestion(
     })
   }
 
-  const baseline = getCurrentCoverageBaseline(scope, userState)
+  const baseline = getCurrentUserCoverageSummary(scope, userState)
   const classified = classifyRecommendedPlans(scope, userState)
   const bestId = classified.bestValuePlanId ?? classified.fullCoveragePlanId
   const bestPlan = bestId ? getOptimizerPlanById(bestId) : undefined
@@ -333,22 +324,24 @@ export function answerMissingGamesQuestion(
   }
 
   const reasons: string[] = [
-    `This season, with your current services you can watch ${baseline.gamesWatchable} of ${baseline.totalGames} games for ${SCOPE_HEADLINE[scope]} (${baseline.coveragePercent}%).`,
+    `Live schedule (${SCOPE_HEADLINE[scope]}): with your current services, ${baseline.gamesWatchable} of ${baseline.totalGames} games are watchable (${baseline.coveragePercent}%).`,
   ]
 
   if (missing.length === 0) {
-    reasons.push("Every game in this short window on the schedule is watchable with your current setup.")
+    reasons.push(
+      "Every game in this 7-day window is watchable on video with your current setup."
+    )
   } else {
     reasons.push(
       `${missing.length} game(s) in this window are not fully watchable on video — see the list below.`
     )
     if (bestPlan && unlockMoreGamesThisSeason > 0) {
       reasons.push(
-        `“${bestPlan.name}” unlocks about ${unlockMoreGamesThisSeason} more games this season (≈ +$${incrementalCost.toFixed(2)}/mo vs your current priced services).`
+        `Season catalog (full-season model): “${bestPlan.name}” could add about ${unlockMoreGamesThisSeason} more watchable games vs the catalog baseline (≈ +$${incrementalCost.toFixed(2)}/mo vs your priced services).`
       )
     } else if (bestPlan) {
       reasons.push(
-        `Consider “${bestPlan.name}” for more season coverage; incremental unlocks are small for your current entitlements.`
+        `Consider “${bestPlan.name}” for more season-catalog coverage; incremental unlocks are small for your current entitlements.`
       )
     }
   }
@@ -358,8 +351,8 @@ export function answerMissingGamesQuestion(
     headline: `Missing video — ${SCOPE_HEADLINE[scope]}`,
     summary:
       missing.length === 0
-        ? "No video gaps in this window—see Details for season coverage."
-        : `You’re missing full video for ${missing.length} game(s) below. Compare plans to improve season coverage.`,
+        ? "No video gaps in this 7-day window—Details shows your live schedule summary."
+        : `You’re missing full video for ${missing.length} game(s) below. Compare plans for season-catalog upgrades.`,
     baseline: {
       scope,
       gamesWatchable: baseline.gamesWatchable,

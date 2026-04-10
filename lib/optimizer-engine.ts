@@ -84,6 +84,10 @@ function serviceSetsEqual(a: readonly string[], b: readonly string[]): boolean {
  * 3) Else watchable 0 with season `totalGames` for the scope (from Full Coverage row when present).
  *
  * Sample / near‑term schedules are not used here (see `getSampleCoverageCounts`, `getUpcomingCoverageWindow`).
+ *
+ * **Not** the source of truth for “what you can watch” on the live app schedule — use
+ * `getCurrentUserCoverageSummary` from `current-user-coverage.ts` (resolver + engine games) for
+ * Home, Plans “Your Current Plan”, Assistant, and per-game consistency.
  */
 export function getCurrentCoverageBaseline(
   scope: OptimizerScope,

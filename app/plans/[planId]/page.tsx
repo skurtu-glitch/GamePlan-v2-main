@@ -177,10 +177,10 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     if (!plan) return ""
     if (isRadioOnlyPre) return `Follow every game live with ${plan.name}`
     if (isLogicBestValuePre) {
-      return `Get ${plan.name} to unlock more of your games this season`
+      return `Get ${plan.name} for more season-catalog coverage`
     }
     if (unlockDelta > 0) {
-      return `Get ${plan.name} to unlock ${unlockDelta} more games this season`
+      return `Season catalog: get ${plan.name} to unlock ${unlockDelta} more watchable games`
     }
     return `Choose ${plan.name} for stronger season coverage`
   }, [plan, isRadioOnlyPre, isLogicBestValuePre, unlockDelta])
@@ -196,11 +196,11 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     }
     if (unlockDelta > 0) {
       bullets.push(
-        `Unlocks ${unlockDelta} more watchable games this season vs your current setup.`
+        `Season catalog: +${unlockDelta} more watchable games vs your catalog-mapped current setup.`
       )
     } else {
       bullets.push(
-        `${plan.coveragePercent}% watchable this season (${plan.gamesWatchable} of ${plan.totalGames} games on the catalog).`
+        `Season catalog: ${plan.coveragePercent}% watchable (${plan.gamesWatchable} of ${plan.totalGames} games in the optimizer model).`
       )
     }
     const canAvoidFull =
@@ -218,7 +218,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
       currentBaseline.coveragePercent !== plan.coveragePercent
     ) {
       bullets.push(
-        `${currentBaseline.coveragePercent}% → ${plan.coveragePercent}% watchable coverage this season.`
+        `Season catalog: ${currentBaseline.coveragePercent}% → ${plan.coveragePercent}% watchable coverage.`
       )
     } else if (bullets.length < 2) {
       bullets.push(
@@ -641,7 +641,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
         {availableUpgrades.length > 0 && (
           <section className="mb-6">
             <h3 className="mb-3 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Upgrade to Unlock More
+              Season-catalog upgrades
             </h3>
             {availableUpgrades.map((upgrade) => {
               const upgradeStats = getUpgradeImpactStats(upgrade)
@@ -669,7 +669,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                       </div>
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-foreground">
-                          +{upgradeStats.newlyWatchable} more watchable games this season
+                          +{upgradeStats.newlyWatchable} watchable games (season catalog)
                         </p>
                         <p className="text-xs text-muted-foreground">
                           Upgrade to {upgrade.toPlanName} for +${upgradeStats.costDelta.toFixed(2)}/mo

@@ -112,7 +112,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
 
   const upgradeDecisionHeadline = useMemo(() => {
     if (!upgrade || !stats || !toPlan) return ""
-    return `Get ${upgrade.toPlanName} to unlock ${stats.newlyWatchable} more games this season`
+    return `Season catalog: get ${upgrade.toPlanName} to unlock ${stats.newlyWatchable} more watchable games`
   }, [upgrade, stats, toPlan])
 
   const upgradeWhyBullets = useMemo(() => {
@@ -130,7 +130,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
       )
     } else {
       bullets.push(
-        `Unlocks ${stats.newlyWatchable} more watchable games this season for +$${stats.costDelta.toFixed(2)}/mo list.`
+        `Season catalog: +${stats.newlyWatchable} watchable games for +$${stats.costDelta.toFixed(2)}/mo list.`
       )
     }
     return bullets.slice(0, 2)
@@ -485,7 +485,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
         <Card className="mb-6 overflow-hidden border-accent/30 bg-gradient-to-br from-accent/10 to-emerald-500/5 p-0">
           <div className="p-5">
             <p className="mb-3 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
-              This season
+              Season catalog (full season)
             </p>
             <div className="flex items-center justify-between">
               {/* Games gained */}
@@ -495,7 +495,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 </div>
                 <div>
                   <p className="text-3xl font-bold text-emerald-400">+{stats.newlyWatchable}</p>
-                  <p className="text-xs text-muted-foreground">more watchable games</p>
+                  <p className="text-xs text-muted-foreground">more catalog watchable games</p>
                 </div>
               </div>
               
@@ -535,7 +535,9 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
         {/* Value Framing */}
         <Card className="mb-6 overflow-hidden border-border p-0">
           <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">Cost per newly unlocked game</span>
+            <span className="text-sm text-muted-foreground">
+              Cost per newly catalog-unlocked game
+            </span>
             <span className="text-xl font-bold text-foreground">
               ~${stats.costPerNewGame.toFixed(2)}
             </span>

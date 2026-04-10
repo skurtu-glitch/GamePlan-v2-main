@@ -3,6 +3,10 @@
  * Complements season + synthetic sample schedules in `plan-coverage.ts`.
  */
 
+import {
+  gameMatchesOptimizerScope,
+  summarizeResolverCoverageForGames,
+} from "@/lib/current-user-coverage"
 import type { DemoUserState } from "@/lib/demo-user"
 import { demoUserWithConnectedServiceIds } from "@/lib/demo-user"
 import { getEngineGames } from "@/lib/data-sources/games"
@@ -14,30 +18,12 @@ import type { Game } from "@/lib/types"
 /** Default horizon for optimizer + Home “immediate relevance” signals. */
 export const DEFAULT_NEAR_TERM_OPTIMIZER_DAYS = 7
 
-const BLUES_ID = "stl-blues"
-const CARDINALS_ID = "stl-cardinals"
-
 function startEndForWindow(days: number, now: Date): { start: Date; end: Date } {
   const start = new Date(now)
   start.setHours(0, 0, 0, 0)
   const end = new Date(start)
   end.setDate(end.getDate() + days)
   return { start, end }
-}
-
-function gameMatchesOptimizerScope(game: Game, scope: OptimizerScope): boolean {
-  if (scope === "both") {
-    return (
-      game.homeTeam.id === BLUES_ID ||
-      game.awayTeam.id === BLUES_ID ||
-      game.homeTeam.id === CARDINALS_ID ||
-      game.awayTeam.id === CARDINALS_ID
-    )
-  }
-  if (scope === "blues") {
-    return game.homeTeam.id === BLUES_ID || game.awayTeam.id === BLUES_ID
-  }
-  return game.homeTeam.id === CARDINALS_ID || game.awayTeam.id === CARDINALS_ID
 }
 
 /**
@@ -78,26 +64,11 @@ export function getUpcomingCoverageWindow(
   now: Date = new Date()
 ): UpcomingCoverageWindow {
   const games = getNearTermEngineGamesForScope(scope, days, now)
-  let gamesWatchable = 0
-  let gamesListenOnly = 0
-  let gamesUnavailable = 0
-  for (const game of games) {
-    const s = resolveGameAccess(game, userState).status
-    if (s === "watchable") gamesWatchable++
-    else if (s === "listen-only") gamesListenOnly++
-    else gamesUnavailable++
-  }
-  const totalGames = games.length
-  const coveragePercent =
-    totalGames > 0 ? Math.round((gamesWatchable / totalGames) * 100) : 0
+  const counts = summarizeResolverCoverageForGames(games, userState)
   return {
     scope,
     days,
-    gamesWatchable,
-    gamesListenOnly,
-    gamesUnavailable,
-    totalGames,
-    coveragePercent,
+    ...counts,
   }
 }
 

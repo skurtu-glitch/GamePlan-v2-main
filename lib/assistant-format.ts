@@ -8,12 +8,10 @@ import type {
   PlanQuestionAnswer,
   WatchQuestionAnswer,
 } from "@/lib/assistant-engine"
+import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 import { userTeams, getEngineGames } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
-import {
-  calculateIncrementalPlanValue,
-  getCurrentCoverageBaseline,
-} from "@/lib/optimizer-engine"
+import { calculateIncrementalPlanValue } from "@/lib/optimizer-engine"
 import {
   getAffiliateLink,
   hasAffiliateLanding,
@@ -84,7 +82,9 @@ function filterWhyVsDecision(
         return false
       }
     }
-    const only = line.match(/You only have (\d+)% coverage this season\.?/i)
+    const only = line.match(
+      /Live schedule: (\d+)% of games watchable on video\.?/i
+    )
     if (only && arrow && Number(only[1]) === arrow.before) return false
     return true
   })
@@ -177,17 +177,17 @@ export function formatAssistantDecision(
     const best = bestId ? getOptimizerPlanById(bestId) : undefined
     if (best) {
       const inc = calculateIncrementalPlanValue(best, scope, userState)
-      const baseline = getCurrentCoverageBaseline(scope, userState)
-      const before = baseline.coveragePercent
+      const live = getCurrentUserCoverageSummary(scope, userState)
+      const before = live.coveragePercent
       const after = best.coveragePercent
       let impact = ""
       if (inc.newlyWatchableGames > 0 && before > 0 && after > before) {
         const ratio = after / before
         const times =
           ratio >= 1.95 ? `${Math.round(ratio)}×` : `~${ratio.toFixed(1)}×`
-        impact = ` Unlocks ${inc.newlyWatchableGames} more games (${before}% → ${after}% coverage, ${times}).`
+        impact = ` Season catalog: +${inc.newlyWatchableGames} watchable games; ${before}% live on your schedule → ${after}% on that plan’s catalog tier (${times}).`
       } else if (inc.newlyWatchableGames > 0) {
-        impact = ` Unlocks ${inc.newlyWatchableGames} more games.`
+        impact = ` Season catalog: +${inc.newlyWatchableGames} watchable games (full-season model).`
       }
       return `Best move: ${best.name}.${impact}`
     }
@@ -202,7 +202,7 @@ export function formatAssistantDecision(
   const m = input.payload
   if (m.missingGames.length === 0) {
     const { gamesWatchable, totalGames, coveragePercent } = m.baseline
-    return `You can watch ${gamesWatchable} of ${totalGames} games this season (${coveragePercent}% coverage).`
+    return `You can watch ${gamesWatchable} of ${totalGames} games on your schedule (${coveragePercent}% coverage).`
   }
   const head =
     m.baseline.coveragePercent < 50
@@ -222,10 +222,10 @@ export function formatAssistantDecision(
     const ratio = after / before
     const times =
       ratio >= 1.95 ? `${Math.round(ratio)}×` : `~${ratio.toFixed(1)}×`
-    return `${head} ${m.upgradeHint.planName ?? plan.name} unlocks ${m.upgradeHint.unlockMoreGamesThisSeason} more games (${before}% → ${after}% coverage, ${times}).`
+    return `${head} ${m.upgradeHint.planName ?? plan.name} — season catalog: +${m.upgradeHint.unlockMoreGamesThisSeason} watchable games (${before}% live → ${after}% catalog tier, ${times}).`
   }
   if (m.upgradeHint.unlockMoreGamesThisSeason > 0 && m.upgradeHint.planName) {
-    return `${head} ${m.upgradeHint.planName} unlocks ${m.upgradeHint.unlockMoreGamesThisSeason} more games.`
+    return `${head} ${m.upgradeHint.planName} — season catalog: +${m.upgradeHint.unlockMoreGamesThisSeason} watchable games.`
   }
   return head
 }
@@ -322,9 +322,9 @@ export function formatAssistantWhy(
     let unlockInDecision = false
     if (best) {
       const inc = calculateIncrementalPlanValue(best, scope, userState)
-      const baseline = getCurrentCoverageBaseline(scope, userState)
+      const live = getCurrentUserCoverageSummary(scope, userState)
       unlockInDecision =
-        inc.newlyWatchableGames > 0 && best.coveragePercent > baseline.coveragePercent
+        inc.newlyWatchableGames > 0 && best.coveragePercent > live.coveragePercent
     }
 
     if (
@@ -339,15 +339,17 @@ export function formatAssistantWhy(
     if (!unlockInDecision && best) {
       const inc = calculateIncrementalPlanValue(best, scope, userState)
       if (inc.newlyWatchableGames > 0) {
-        const baseline = getCurrentCoverageBaseline(scope, userState)
+        const live = getCurrentUserCoverageSummary(scope, userState)
         const after = best.coveragePercent
-        const before = baseline.coveragePercent
+        const before = live.coveragePercent
         if (after > before) {
           out.push(
-            `Unlocks ${inc.newlyWatchableGames} more games (${before}% → ${after}% coverage).`
+            `Season catalog: +${inc.newlyWatchableGames} watchable games (${before}% live on your schedule → ${after}% catalog tier).`
           )
         } else {
-          out.push(`Unlocks ${inc.newlyWatchableGames} more games this season.`)
+          out.push(
+            `Season catalog: +${inc.newlyWatchableGames} watchable games (full-season model).`
+          )
         }
       }
     }
@@ -361,7 +363,9 @@ export function formatAssistantWhy(
       if (cheap) {
         const inc = calculateIncrementalPlanValue(cheap, scope, userState)
         if (inc.newlyWatchableGames > 0) {
-          out.push(`Cheapest adds ${inc.newlyWatchableGames} watchable games.`)
+          out.push(
+            `Season catalog: cheapest tier adds ${inc.newlyWatchableGames} watchable games.`
+          )
         }
       }
     }
@@ -411,7 +415,7 @@ export function formatAssistantWhy(
     out.push(`${payload.upgradeHint.planName} adds the biggest coverage jump.`)
   } else if (unwatched > 0) {
     out.push(
-      `You’re missing ${unwatched} game${unwatched === 1 ? "" : "s"} this season without full video.`
+      `You’re missing ${unwatched} game${unwatched === 1 ? "" : "s"} on your live schedule without full video.`
     )
   }
 
@@ -421,7 +425,7 @@ export function formatAssistantWhy(
 
   if (out.length < MAX_WHY) {
     out.push(
-      `You only have ${payload.baseline.coveragePercent}% coverage this season.`
+      `Live schedule: ${payload.baseline.coveragePercent}% of games watchable on video.`
     )
   }
 

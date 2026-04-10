@@ -33,7 +33,7 @@ import {
 } from "@/lib/assistant-format"
 import type { DemoUserState } from "@/lib/demo-user"
 import { userTeams } from "@/lib/data"
-import { getCurrentCoverageBaseline } from "@/lib/optimizer-engine"
+import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
 import { formatServiceIdList } from "@/lib/streaming-service-ids"
 import {
@@ -227,7 +227,7 @@ function buildAssistantMessage(query: string, userState: DemoUserState): Message
 
 function AssistantContextBar({ userState }: { userState: DemoUserState }) {
   const line = useMemo(() => {
-    const teamLine = userTeams.map((t) => t.name).join(" + ")
+    const teamLine = `${userTeams.map((t) => t.name).join(" + ")} · both teams`
     const ids = userState.connectedServiceIds
     const svc =
       ids.length === 0
@@ -235,8 +235,9 @@ function AssistantContextBar({ userState }: { userState: DemoUserState }) {
         : ids.length <= 2
           ? formatServiceIdList(ids)
           : `${ids.length} services`
-    const cov = getCurrentCoverageBaseline("both", userState).coveragePercent
-    return `${teamLine} · ${svc} · ${cov}% coverage`
+    const live = getCurrentUserCoverageSummary("both", userState)
+    const gamesLine = `${live.gamesWatchable} of ${live.totalGames} games watchable`
+    return `${teamLine} · ${svc} · ${gamesLine} · ${live.coveragePercent}%`
   }, [userState])
 
   return (

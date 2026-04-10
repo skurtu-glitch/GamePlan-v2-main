@@ -1,13 +1,15 @@
 /**
- * Home “Suggested for You” copy — season catalog coverage + optimizer (live with demo user state).
+ * Home “Suggested for You” copy — live schedule coverage (resolver) + catalog optimizer for upgrades.
  */
 
+import {
+  getCurrentUserCoverageSummary,
+  type CurrentUserCoverageSummary,
+} from "@/lib/current-user-coverage"
 import type { DemoUserState } from "@/lib/demo-user"
 import {
   calculateIncrementalPlanValue,
   classifyRecommendedPlans,
-  getCurrentCoverageBaseline,
-  type CurrentCoverageBaseline,
 } from "@/lib/optimizer-engine"
 import {
   getOptimizerPlanById,
@@ -21,7 +23,7 @@ import { formatBundlePlusList } from "@/lib/conversion-copy"
 export const HOME_SUGGESTED_CTA_LABEL = "Review details" as const
 
 export interface HomeInsightCardContent {
-  /** Season-catalog baseline (same basis as Plan Optimizer cards). */
+  /** Live schedule in scope: watchable / total / % via {@link resolveGameAccess}. */
   wowMetricLine: string
   headline: string
   summary: string
@@ -37,8 +39,13 @@ export interface HomeInsightCardContent {
   ctaHref: string
 }
 
-export function formatHomeWowMetric(baseline: CurrentCoverageBaseline): string {
-  return `You can watch ${baseline.gamesWatchable} of ${baseline.totalGames} games this season (${baseline.coveragePercent}% coverage)`
+export function formatHomeWowMetric(
+  summary: Pick<
+    CurrentUserCoverageSummary,
+    "gamesWatchable" | "totalGames" | "coveragePercent"
+  >
+): string {
+  return `Across Blues + Cardinals: ${summary.gamesWatchable} of ${summary.totalGames} games watchable on your in-app schedule (${summary.coveragePercent}%)`
 }
 
 const HOME_BEST_VALUE_PLAN_HEADLINE =
@@ -46,7 +53,7 @@ const HOME_BEST_VALUE_PLAN_HEADLINE =
 
 function formatAddsAndUnlocksLine(serviceCount: number, unlockSeason: number): string {
   const svc = serviceCount === 1 ? "service" : "services"
-  return `Adds ${serviceCount} ${svc} · Unlock ${unlockSeason} more games this season`
+  return `Adds ${serviceCount} ${svc} · Season catalog: +${unlockSeason} more watchable games (full-season model)`
 }
 
 const VIDEO_SERVICE_IDS = new Set([
@@ -132,8 +139,8 @@ export function buildHomeSuggestedInsight(
   if (userState.connectedServiceIds.length === 0) return null
 
   const ctaLabel = HOME_SUGGESTED_CTA_LABEL
-  const baseline = getCurrentCoverageBaseline(scope, userState)
-  const wowMetricLine = formatHomeWowMetric(baseline)
+  const live = getCurrentUserCoverageSummary(scope, userState)
+  const wowMetricLine = formatHomeWowMetric(live)
   const classified = classifyRecommendedPlans(scope, userState)
   const bestPlan =
     classified.bestValuePlanId != null
@@ -149,10 +156,10 @@ export function buildHomeSuggestedInsight(
       wowMetricLine,
       headline: "You're at full coverage for both teams",
       summary:
-        "Your connected services match the Full Coverage catalog plan for the Blues and Cardinals.",
+        "Your connected services match the Full Coverage catalog plan for Blues + Cardinals (both teams).",
       supportingLine:
-        baseline.totalGames > 0
-          ? `${baseline.gamesWatchable} of ${baseline.totalGames} season games are watchable with the teams you follow.`
+        live.totalGames > 0
+          ? `Both teams: ${live.gamesWatchable} of ${live.totalGames} games on your in-app schedule are watchable with your services.`
           : undefined,
       ctaLabel,
       ctaHref: `/plans/${fullPlan.id}`,
@@ -163,11 +170,11 @@ export function buildHomeSuggestedInsight(
     const ctaHref = bestPlan && classified.bestValuePlanId ? `/plans/${classified.bestValuePlanId}` : "/plans"
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
-      headline: "Add a video service to unlock watchable games",
+      headline: "Add video for Blues + Cardinals",
       summary:
         "You're on audio-only access today. The Plan Optimizer shows the lightest video stacks that turn radio follow-alongs into watches—without jumping straight to full coverage.",
       supportingLine: bestPlan
-        ? `Best Value on the catalog is “${bestPlan.name}”—review incremental cost and coverage there.`
+        ? `Season catalog Best Value: “${bestPlan.name}”—review incremental cost and coverage there.`
         : undefined,
       ctaLabel,
       ctaHref,
@@ -200,7 +207,7 @@ export function buildHomeSuggestedInsight(
       wowMetricLine,
       headline: "Compare bundles for your teams",
       summary:
-        "Use the Plan Optimizer to rank catalog plans by watchable games and monthly cost for both teams this season.",
+        "Use the Plan Optimizer to rank season-catalog plans by watchable games and monthly cost for both teams.",
       ctaLabel,
       ctaHref: "/plans",
     }
@@ -209,7 +216,7 @@ export function buildHomeSuggestedInsight(
   const inc = calculateIncrementalPlanValue(bestPlan, scope, userState)
   const unlockSeason = inc.newlyWatchableGames
   const missingWatchable =
-    baseline.totalGames > 0 ? Math.max(0, baseline.totalGames - baseline.gamesWatchable) : 0
+    live.totalGames > 0 ? Math.max(0, live.totalGames - live.gamesWatchable) : 0
   const keyAdds = inc.incrementalServices.filter((id) => VIDEO_SERVICE_IDS.has(id))
   const keyAddNames = keyAdds.map(serviceDisplayName)
   const haveNames = videoServicesConnected(userState).map(serviceDisplayName)
@@ -221,7 +228,7 @@ export function buildHomeSuggestedInsight(
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: "Fine-tune your stack in the Plan Optimizer",
-      summary: `You're at ${baseline.coveragePercent}% watchable this season (${baseline.gamesWatchable} of ${baseline.totalGames} games). Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up.`,
+      summary: `You're at ${live.coveragePercent}% watchable on your schedule (${live.gamesWatchable} of ${live.totalGames} games). Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up.`,
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
@@ -235,7 +242,7 @@ export function buildHomeSuggestedInsight(
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
       summary: `${havePart}Adding ${formatConjoinedList(
         keyAddNames
-      )} fills the key gaps—unlocking most of the games you're currently missing without paying for full coverage.`,
+      )} fills the key gaps—season catalog: unlocking most of what you’re missing vs full coverage, without paying for the full bundle.`,
       supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
@@ -248,7 +255,7 @@ export function buildHomeSuggestedInsight(
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,
-      summary: `${havePart}Adding ${keyAddNames[0]} fills a major gap—unlocking most of the games you're currently missing without paying for full coverage.`,
+      summary: `${havePart}Adding ${keyAddNames[0]} fills a major gap—season catalog: unlocking most of what you’re missing vs full coverage.`,
       supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
@@ -262,10 +269,10 @@ export function buildHomeSuggestedInsight(
       keyAddNames.length > 0
         ? `Adding ${formatConjoinedList(
             keyAddNames
-          )} unlocks about ${unlockSeason} more games this season for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
+          )} — season catalog estimate: about ${unlockSeason} more watchable games for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
         : `“${
             bestPlan.name
-          }” unlocks about ${unlockSeason} more games this season for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
+          }” — season catalog estimate: about ${unlockSeason} more watchable games for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: HOME_BEST_VALUE_PLAN_HEADLINE,

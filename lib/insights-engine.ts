@@ -6,10 +6,10 @@
 import { answerMissingGamesQuestion } from "@/lib/assistant-engine"
 import type { DemoUserState } from "@/lib/demo-user"
 import { getEngineGames, userTeams } from "@/lib/data"
+import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 import {
   calculateIncrementalPlanValue,
   classifyRecommendedPlans,
-  getCurrentCoverageBaseline,
 } from "@/lib/optimizer-engine"
 import { getOptimizerPlanById } from "@/lib/optimizer-plans"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
@@ -145,20 +145,20 @@ function buildPlanRecommendationInsight(
     headline: `Best value: ${plan.name}`,
     summary:
       inc.newlyWatchableGames > 0
-        ? `Optimizer picks “${plan.name}” — about ${inc.newlyWatchableGames} more watchable games this season for roughly +$${inc.incrementalCost.toFixed(2)}/mo vs your priced services.`
-        : `Optimizer highlights “${plan.name}” for this footprint (small season unlock vs your stack; compare catalog coverage).`,
+        ? `Optimizer picks “${plan.name}” — season catalog: about ${inc.newlyWatchableGames} more watchable games for roughly +$${inc.incrementalCost.toFixed(2)}/mo vs your priced services (both teams).`
+        : `Optimizer highlights “${plan.name}” for this footprint (small season-catalog unlock vs your stack; compare tiers).`,
     primaryAction: { label: "Compare plans", href: "/plans" },
     secondaryAction: { label: "Plan details", href: `/plans/${plan.id}` },
   }
 }
 
 function buildCoverageSummaryInsight(userState: DemoUserState): UserInsight {
-  const b = getCurrentCoverageBaseline(INSIGHT_SCOPE, userState)
+  const b = getCurrentUserCoverageSummary(INSIGHT_SCOPE, userState)
   return {
     id: "insight-coverage-baseline",
     type: "coverage-summary",
-    headline: "Season coverage",
-    summary: `With your current services you can watch ${b.gamesWatchable} of ${b.totalGames} games this season (${b.coveragePercent}%) for both teams.`,
+    headline: "Schedule coverage · both teams",
+    summary: `Blues + Cardinals: with your current services, ${b.gamesWatchable} of ${b.totalGames} games are watchable on your in-app schedule (${b.coveragePercent}%).`,
     primaryAction: { label: "View plans", href: "/plans" },
     secondaryAction: { label: "Assistant", href: "/assistant" },
   }
@@ -170,7 +170,7 @@ function buildCoverageSummaryInsight(userState: DemoUserState): UserInsight {
  * 1. Next non-watchable upcoming game (watch-upgrade)
  * 2. Rolling-window gaps from real schedule + assistant missing-games pipeline (detail list)
  * 3. Optimizer best-value + season catalog unlock (plan-recommendation)
- * 4. Baseline season coverage (coverage-summary)
+ * 4. Live schedule coverage summary (coverage-summary)
  */
 export function getUserInsights(
   userState: DemoUserState,

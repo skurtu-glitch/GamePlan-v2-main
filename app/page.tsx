@@ -45,24 +45,12 @@ import {
   Check,
 } from "lucide-react"
 
-// Filter games for user's teams
+// Filter games for user's teams (demo: Blues + Cardinals)
 const userGames = getEngineGames().filter((game) =>
   userTeams.some(
     (team) => team.id === game.homeTeam.id || team.id === game.awayTeam.id
   )
 )
-
-// Separate tonight's games from upcoming
-const now = new Date()
-const tonightsGames = userGames.filter((game) => {
-  const gameDate = new Date(game.dateTime)
-  return gameDate.toDateString() === now.toDateString()
-})
-
-const upcomingGames = userGames.filter((game) => {
-  const gameDate = new Date(game.dateTime)
-  return gameDate.toDateString() !== now.toDateString()
-})
 
 // Determine coverage state
 type CoverageState = 
@@ -222,7 +210,29 @@ function SuggestedForYouCard({
 export default function HomePage() {
   const { state } = useDemoUser()
   const [mounted, setMounted] = useState(false)
+  /** Bumps on an interval so “tonight” vs “upcoming” stays correct across midnight / long sessions. */
+  const [scheduleTick, setScheduleTick] = useState(0)
   const hasConnectedServices = state.connectedServiceIds.length > 0
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setScheduleTick((t) => t + 1)
+    }, 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  const { tonightsGames, upcomingGames } = useMemo(() => {
+    const now = new Date()
+    const tonights = userGames.filter((game) => {
+      const gameDate = new Date(game.dateTime)
+      return gameDate.toDateString() === now.toDateString()
+    })
+    const upcoming = userGames.filter((game) => {
+      const gameDate = new Date(game.dateTime)
+      return gameDate.toDateString() !== now.toDateString()
+    })
+    return { tonightsGames: tonights, upcomingGames: upcoming }
+  }, [scheduleTick])
 
   const { watchableTonight, listenOnlyTonight, unavailableTonight } = useMemo(() => {
     let w = 0
@@ -239,7 +249,7 @@ export default function HomePage() {
       listenOnlyTonight: l,
       unavailableTonight: u,
     }
-  }, [state])
+  }, [state, tonightsGames])
 
   const coverageState = getCoverageState(
     hasConnectedServices,
@@ -266,7 +276,7 @@ export default function HomePage() {
       return missTonightUrgencyLine(urgencyTeamLabel(upcoming, teamIds))
     }
     return seasonUnlockBanner()
-  }, [])
+  }, [scheduleTick])
 
   useEffect(() => {
     setMounted(true)
@@ -342,6 +352,9 @@ export default function HomePage() {
             Good evening, {state.preferences.displayName}
           </p>
           <h1 className="text-xl font-bold text-foreground">GamePlan</h1>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Blues + Cardinals — both teams on your schedule
+          </p>
         </div>
       </header>
 
@@ -413,6 +426,9 @@ export default function HomePage() {
                 <h2 className="text-sm font-semibold text-foreground">
                   Your Coverage Tonight
                 </h2>
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
+                  Blues + Cardinals · today
+                </p>
               </div>
               <div className="p-5">
                 {/* Hero Content */}
@@ -598,10 +614,13 @@ export default function HomePage() {
         {/* UPCOMING GAMES */}
         {upcomingGames.length > 0 && (
           <section className="mb-8">
-            <div className="mb-4 flex items-center justify-between">
+            <div className="mb-4 flex flex-col gap-0.5">
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 {coverageState === "no_games" ? "Coming Up" : "Upcoming Games"}
               </h2>
+              <p className="text-[11px] text-muted-foreground">
+                Blues + Cardinals · both teams
+              </p>
             </div>
             <div className="flex flex-col gap-3">
               {upcomingGames.slice(0, coverageState === "no_games" ? 5 : 3).map((game) => {
@@ -736,6 +755,9 @@ export default function HomePage() {
           <section className="mb-2">
             <p className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Suggested for You
+            </p>
+            <p className="mb-1 text-[11px] text-muted-foreground">
+              Best next move · both teams (same scope as this home schedule)
             </p>
             <p className="mb-3 text-xs tabular-nums leading-relaxed text-muted-foreground">
               {suggestedForYou.wowMetricLine}

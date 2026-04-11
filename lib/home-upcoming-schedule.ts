@@ -73,6 +73,27 @@ export function formatUpcomingWatchSecondaryLine(watchable: number, total: numbe
   return "The rest are listen-only or not available on video with your current subscriptions."
 }
 
+/**
+ * Explicit “loss” line when watchable is less than total (same X/Y semantics as the “You can watch X of Y” summaries).
+ * Presentation-only — counts come from existing resolver passes.
+ */
+export function formatMissedGamesGapLine(watchable: number, total: number): string | null {
+  if (total <= 0 || watchable >= total) return null
+  const missed = total - watchable
+  return missed === 1
+    ? "You're missing 1 game with your current setup."
+    : `You're missing ${missed} games with your current setup.`
+}
+
+/** Tonight-only variant for the Home coverage hero (same watchable vs total semantics as row resolver). */
+export function formatTonightMissedGapLine(watchable: number, total: number): string | null {
+  if (total <= 0 || watchable >= total) return null
+  const missed = total - watchable
+  return missed === 1
+    ? "You're missing 1 game tonight with your current setup."
+    : `You're missing ${missed} games tonight with your current setup.`
+}
+
 /** Full Schedule summary line (same resolver semantics as rows; pass % from `summarizeResolverCoverageForGames` when desired). */
 export function formatScheduledGamesWatchSummaryLine(
   watchable: number,

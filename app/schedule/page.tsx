@@ -67,6 +67,13 @@ export default function SchedulePage() {
     [state, scheduleVersion]
   )
 
+  const scheduleMissedCount = useMemo(
+    () => Math.max(0, coverage.totalGames - coverage.gamesWatchable),
+    [coverage.gamesWatchable, coverage.totalGames]
+  )
+  const scheduleHasMissedGames =
+    !scheduleBlocked && sortedGames.length > 0 && scheduleMissedCount > 0
+
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -119,6 +126,16 @@ export default function SchedulePage() {
           <section className="mb-6">
             <ScheduleHydrationSkeleton />
           </section>
+        )}
+
+        {scheduleHasMissedGames && (
+          <div className="mb-5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-3 dark:bg-amber-500/5">
+            <p className="text-sm font-semibold leading-snug text-foreground">
+              {scheduleMissedCount === 1
+                ? "You're missing 1 game from your followed teams."
+                : `You're missing ${scheduleMissedCount} games from your followed teams.`}
+            </p>
+          </div>
         )}
 
         {!scheduleBlocked && (

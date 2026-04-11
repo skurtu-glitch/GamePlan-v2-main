@@ -25,11 +25,17 @@ import { getGameDetail } from "@/lib/game-details"
 import { formatGameDetailAccess } from "@/lib/format-game-detail-access"
 import {
   chooseMonetizedPrimaryLabel,
+  formatUpgradeBeforeAfterWatchableLines,
   isGameWithinHours,
   labelFixMyCoverage,
   labelGetBestValue,
   labelReviewDetails,
   socialProofRecommended,
+  upgradeAboutMonthlyMoreLine,
+  upgradeCostPerGameCompactLine,
+  upgradePrimaryWatchMoreGames,
+  upgradeSecondaryFullSeason,
+  upgradeUnlockAdditionalGamesSeason,
   URGENCY_HOURS,
   valueJustificationBestValue,
 } from "@/lib/conversion-copy"
@@ -57,6 +63,8 @@ import {
   optimizerScopeForGame,
   resolveGameDetailUpgradeImpactId,
 } from "@/lib/game-detail-upgrade"
+import { getFollowedTeamGames } from "@/lib/home-upcoming-schedule"
+import { getUpgradeImpact, getUpgradeImpactStats } from "@/lib/upgrade-impact"
 
 function formatGameTime(dateTime: string) {
   const d = new Date(dateTime)
@@ -319,9 +327,40 @@ export default function GameDetailPage({
   const upgradeScope = game ? optimizerScopeForGame(game, state) : "both"
   const upgradeImpactId = resolveGameDetailUpgradeImpactId(upgradeScope, state)
   const upgradeHref = upgradeImpactId ? `/plans/upgrade/${upgradeImpactId}` : null
+  const upgradeClarity = useMemo(() => {
+    if (!upgradeImpactId) return null
+    const impact = getUpgradeImpact(upgradeImpactId, state)
+    if (!impact) return null
+    const stats = getUpgradeImpactStats(impact)
+    if (stats.newlyWatchable <= 0) return null
+    const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+      stats.catalogCurrentWatchable,
+      stats.catalogUpgradedWatchable
+    )
+    return {
+      primary: upgradePrimaryWatchMoreGames(stats.newlyWatchable),
+      costPerGameCompact: upgradeCostPerGameCompactLine(stats.costPerNewGame),
+      monthlyMore: upgradeAboutMonthlyMoreLine(stats.costDelta),
+      unlock: upgradeUnlockAdditionalGamesSeason(stats.newlyWatchable),
+      secondary: upgradeSecondaryFullSeason(),
+      before,
+      after,
+    }
+  }, [upgradeImpactId, state])
+  const gameIsUrgent = game
+    ? isGameWithinHours(game.dateTime, URGENCY_HOURS, new Date())
+    : false
   const access = game ? resolveGameAccess(game, state) : null
   const accessUi =
     game && access ? formatGameDetailAccess(game, access, state) : null
+
+  const followedUnavailableVideoCount = useMemo(() => {
+    let n = 0
+    for (const g of getFollowedTeamGames(state.followedTeamIds)) {
+      if (resolveGameAccess(g, state).status === "unavailable") n++
+    }
+    return n
+  }, [state, scheduleVersion])
 
   useEffect(() => {
     if (!game) return
@@ -442,7 +481,17 @@ export default function GameDetailPage({
           >
             <div className="px-4 py-4">
               <p className="mb-3 text-[11px] font-semibold leading-snug text-accent">
-                {accessUi.conversionHook}
+                {!gameIsUrgent && upgradeClarity ? (
+                  <span className="block space-y-1">
+                    <span className="block">{upgradeClarity.primary}</span>
+                    <span className="block font-normal text-muted-foreground">
+                      {upgradeClarity.secondary}
+                    </span>
+                    <span className="block font-medium">{upgradeClarity.unlock}</span>
+                  </span>
+                ) : (
+                  accessUi.conversionHook
+                )}
               </p>
               <div className="mb-3 flex items-center gap-2">
                 <Sparkles
@@ -613,7 +662,16 @@ export default function GameDetailPage({
                   <p className="text-xs leading-relaxed text-muted-foreground">
                     <span className="font-medium text-foreground">Also try: </span>
                     {access.fixRecommendation}
-                    {" · "}
+                    {upgradeClarity ? (
+                      <>
+                        {" "}
+                        {upgradeClarity.before}. {upgradeClarity.after}.{" "}
+                        {upgradeClarity.secondary}.
+                        {" · "}
+                      </>
+                    ) : (
+                      " · "
+                    )}
                     {upgradeHref ? (
                       <Link
                         href={upgradeHref}
@@ -703,6 +761,11 @@ export default function GameDetailPage({
               >
                 {accessUi.watchVerdict.summary}
               </p>
+              {access?.status === "unavailable" && followedUnavailableVideoCount >= 2 && (
+                <p className="mb-2 text-sm font-semibold text-amber-800 dark:text-amber-400/95">
+                  This is one of several games not available with your current setup.
+                </p>
+              )}
               <ul className="mb-4 space-y-1.5">
                 {accessUi.watchVerdict.reasons.map((reason, i) => (
                   <li
@@ -730,6 +793,24 @@ export default function GameDetailPage({
                   <p className="text-xs text-muted-foreground">
                     Connect the right service or move to a bundle that includes this feed.
                   </p>
+                  {upgradeHref && upgradeClarity && (
+                    <div className="rounded-md border border-border/60 bg-background/80 px-3 py-2 text-xs leading-relaxed text-foreground">
+                      <p className="font-semibold text-foreground">{upgradeClarity.primary}</p>
+                      {upgradeClarity.costPerGameCompact && (
+                        <p className="mt-0.5 font-medium tabular-nums text-emerald-600 dark:text-emerald-400/95">
+                          {upgradeClarity.costPerGameCompact}
+                        </p>
+                      )}
+                      {upgradeClarity.monthlyMore && (
+                        <p className="mt-0.5 text-muted-foreground">{upgradeClarity.monthlyMore}</p>
+                      )}
+                      <p className="mt-0.5 text-muted-foreground">{upgradeClarity.secondary}</p>
+                      <p className="mt-0.5 text-muted-foreground">{upgradeClarity.unlock}</p>
+                      <p className="mt-1 text-muted-foreground">
+                        {upgradeClarity.before}. {upgradeClarity.after}.
+                      </p>
+                    </div>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     <Button variant="secondary" size="sm" asChild>
                       <Link
@@ -781,7 +862,7 @@ export default function GameDetailPage({
                           }
                         >
                           <Zap className="size-3.5" />
-                          Upgrade to Best Value
+                          {labelGetBestValue()}
                         </Link>
                       </Button>
                     ) : null}

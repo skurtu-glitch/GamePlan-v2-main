@@ -15,6 +15,8 @@ import {
   followedTeamsScopePhrase,
 } from "@/lib/followed-teams-copy"
 import {
+  formatMissedGamesGapLine,
+  formatTonightMissedGapLine,
   formatUpcomingWatchSecondaryLine,
   formatUpcomingWatchSummaryLine,
   getFollowedTeamGames,
@@ -131,6 +133,17 @@ function SuggestedForYouCard({
             Decision
           </p>
           <p className="mt-1 text-sm font-semibold leading-snug text-foreground">{content.headline}</p>
+          {content.upgradeUnlockLine && (
+            <p className="mt-1.5 text-xs font-medium leading-snug text-foreground/90">
+              {content.upgradeUnlockLine}
+            </p>
+          )}
+          {content.upgradeGamesContextLine && (
+            <p className="mt-1 text-xs leading-snug text-muted-foreground">{content.upgradeGamesContextLine}</p>
+          )}
+          {content.upgradeSecondaryLine && (
+            <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{content.upgradeSecondaryLine}</p>
+          )}
           {content.listPriceLine && (
             <p className="mt-1.5 text-[11px] font-medium tabular-nums text-foreground/90">
               {content.listPriceLine}
@@ -294,6 +307,14 @@ export default function HomePage() {
       ),
     [upcomingWatchCounts.watchable, upcomingWatchCounts.total]
   )
+  const upcomingMissedGap = useMemo(
+    () =>
+      formatMissedGamesGapLine(
+        upcomingWatchCounts.watchable,
+        upcomingWatchCounts.total
+      ),
+    [upcomingWatchCounts.watchable, upcomingWatchCounts.total]
+  )
 
   const { watchableTonight, listenOnlyTonight, unavailableTonight } = useMemo(() => {
     let w = 0
@@ -311,6 +332,11 @@ export default function HomePage() {
       unavailableTonight: u,
     }
   }, [state, tonightsGames])
+
+  const tonightMissedGap = useMemo(
+    () => formatTonightMissedGapLine(watchableTonight, tonightsGames.length),
+    [watchableTonight, tonightsGames.length]
+  )
 
   const coverageState = getCoverageState(
     hasConnectedServices,
@@ -534,6 +560,11 @@ export default function HomePage() {
                     {heroContent.subtext && (
                       <p className="text-sm text-muted-foreground">{heroContent.subtext}</p>
                     )}
+                    {tonightMissedGap && (
+                      <p className="mt-2 text-sm font-semibold text-amber-700 dark:text-amber-400/95">
+                        {tonightMissedGap}
+                      </p>
+                    )}
                   </div>
                 </div>
                 
@@ -719,6 +750,11 @@ export default function HomePage() {
               <p className="text-xs font-medium leading-snug text-foreground/90">
                 {upcomingSummaryPrimary}
               </p>
+              {upcomingMissedGap && (
+                <p className="text-xs font-semibold leading-snug text-amber-700 dark:text-amber-400/95">
+                  {upcomingMissedGap}
+                </p>
+              )}
               {upcomingSummarySecondary && (
                 <p className="text-[11px] leading-snug text-muted-foreground">
                   {upcomingSummarySecondary}

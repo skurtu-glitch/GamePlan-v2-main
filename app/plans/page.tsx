@@ -22,12 +22,16 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
-import { classifyRecommendedPlans } from "@/lib/optimizer-engine"
+import {
+  calculateIncrementalPlanValue,
+  classifyRecommendedPlans,
+} from "@/lib/optimizer-engine"
 import {
   getAnnualCost,
   getPlansForScope,
   type OptimizerScope,
 } from "@/lib/optimizer-plans"
+import { getUpgradeImpact, getUpgradeImpactStats } from "@/lib/upgrade-impact"
 import { formatServiceIdList } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
 import { PlanPromoCallout } from "@/components/plan-promo-callout"
@@ -46,11 +50,21 @@ import {
 import {
   chooseMonetizedPrimaryLabel,
   formatBundlePlusList,
+  formatUpgradeBeforeAfterWatchableLines,
   isGameWithinHours,
+  labelBestForYourSetup,
   labelGetBestValue,
   labelReviewDetails,
+  planListBestForYouGuidedFallbackReason,
+  planListBestForYouUnlockReason,
   socialProofMostFans,
   socialProofRecommended,
+  upgradeAboutMonthlyMoreLine,
+  upgradeCostPerAdditionalGameLine,
+  upgradeCostPerGameCompactLine,
+  upgradePrimaryWatchMoreGames,
+  upgradeSecondaryFullSeason,
+  upgradeUnlockAdditionalGamesSeason,
   URGENCY_HOURS,
   valueJustificationBestValue,
   valueJustificationCheapest,
@@ -78,6 +92,27 @@ export default function PlansPage() {
     [selectedTeam, state]
   )
   const bestValuePlanId = recommendations.bestValuePlanId
+
+  /**
+   * Visually emphasize up to 3 catalog rows: always include optimizer `bestValuePlanId`, then next-highest
+   * `bestValueScore` among non-radio plans. Radio and any overflow tiers stay de-emphasized.
+   */
+  const emphasizedPlanIds = useMemo(() => {
+    const nonRadio = recommendations.scoredCandidates.filter(
+      (c) => c.summary.tier !== "radio"
+    )
+    const sorted = [...nonRadio].sort(
+      (a, b) => b.score.bestValueScore - a.score.bestValueScore
+    )
+    const ids: string[] = []
+    if (bestValuePlanId) ids.push(bestValuePlanId)
+    for (const c of sorted) {
+      if (ids.length >= 3) break
+      if (!ids.includes(c.planId)) ids.push(c.planId)
+    }
+    return new Set(ids)
+  }, [recommendations, bestValuePlanId])
+
   const currentCoverage = useMemo(
     () => getCurrentUserCoverageSummary(selectedTeam, state),
     [selectedTeam, state, scheduleVersion]
@@ -221,10 +256,23 @@ export default function PlansPage() {
             const isRadioOnly = plan.tier === "radio"
             const isLogicBestValue =
               bestValuePlanId !== null && plan.id === bestValuePlanId
+            const isEmphasized = emphasizedPlanIds.has(plan.id)
+            const isDeemphasized = !isEmphasized
             const coveragePercent = plan.coveragePercent
             const listenOnlyGames = plan.gamesListenOnly
             const watchPercent = plan.totalGames > 0 ? (plan.gamesWatchable / plan.totalGames) * 100 : 0
             const listenPercent = plan.totalGames > 0 ? (listenOnlyGames / plan.totalGames) * 100 : 0
+            const catalogUnlock =
+              !isRadioOnly
+                ? calculateIncrementalPlanValue(plan, selectedTeam, state)
+                : null
+            const catalogBeforeAfter =
+              catalogUnlock && catalogUnlock.newlyWatchableGames > 0
+                ? formatUpgradeBeforeAfterWatchableLines(
+                    Math.max(0, plan.gamesWatchable - catalogUnlock.newlyWatchableGames),
+                    plan.gamesWatchable
+                  )
+                : null
             const roleExplanation = optimizerRoleExplanation(plan.id, recommendations)
             const bundlePromo = getPlanBundlePromoSummary(plan)
             const leadServiceId = primaryAffiliateServiceIdForPlan(plan)
@@ -257,26 +305,38 @@ export default function PlansPage() {
               <Card 
                 key={plan.id}
                 className={cn(
-                  "relative overflow-hidden border-border p-0 transition-all",
-                  isLogicBestValue && "border-accent ring-1 ring-accent/30"
+                  "relative overflow-hidden p-0 transition-all",
+                  isDeemphasized
+                    ? "border border-border/40 bg-card/60 opacity-[0.88] shadow-none saturate-[0.92]"
+                    : "border border-border shadow-sm",
+                  isLogicBestValue && "border-accent ring-2 ring-accent/35"
                 )}
               >
                 {/* Header Row */}
                 <div className={cn(
-                  "flex items-center justify-between px-5 py-3",
+                  "px-5 py-3",
                   isLogicBestValue ? "bg-accent" : "border-b border-border/50 bg-secondary/30"
                 )}>
-                  <h3 className={cn(
-                    "font-semibold",
-                    isLogicBestValue ? "text-accent-foreground" : "text-foreground"
-                  )}>
-                    {plan.name}
-                  </h3>
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className={cn(
+                      "font-semibold",
+                      isLogicBestValue ? "text-accent-foreground" : "text-foreground"
+                    )}>
+                      {plan.name}
+                    </h3>
+                    {isLogicBestValue && (
+                      <div className="flex shrink-0 items-center gap-1.5 rounded-full bg-accent-foreground/15 px-2.5 py-1 text-[11px] font-semibold text-accent-foreground">
+                        <Sparkles className="size-3.5" />
+                        {labelBestForYourSetup()}
+                      </div>
+                    )}
+                  </div>
                   {isLogicBestValue && (
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-accent-foreground">
-                      <Sparkles className="size-3.5" />
-                      Best Value
-                    </div>
+                    <p className="mt-2 border-t border-accent-foreground/15 pt-2 text-xs leading-snug text-accent-foreground/95">
+                      {catalogUnlock && catalogUnlock.newlyWatchableGames > 0
+                        ? planListBestForYouUnlockReason()
+                        : planListBestForYouGuidedFallbackReason()}
+                    </p>
                   )}
                 </div>
 
@@ -293,6 +353,22 @@ export default function PlansPage() {
                     <p className="mt-1 text-base font-medium text-foreground">
                       {plan.gamesWatchable} of {plan.totalGames} games
                     </p>
+                    {catalogUnlock && catalogUnlock.newlyWatchableGames > 0 && catalogBeforeAfter && (
+                      <div className="mt-3 space-y-1 text-center">
+                        <p className="text-sm font-semibold text-foreground">
+                          {upgradePrimaryWatchMoreGames(catalogUnlock.newlyWatchableGames)}
+                        </p>
+                        <p className="text-[11px] leading-snug text-muted-foreground">
+                          {upgradeUnlockAdditionalGamesSeason(catalogUnlock.newlyWatchableGames)}
+                        </p>
+                        <p className="text-[11px] leading-snug text-muted-foreground">
+                          {catalogBeforeAfter.before}. {catalogBeforeAfter.after}.
+                        </p>
+                        <p className="text-[10px] leading-snug text-muted-foreground/90">
+                          {upgradeSecondaryFullSeason()}
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Coverage Bar */}
@@ -503,12 +579,15 @@ export default function PlansPage() {
                       </Button>
                     </Link>
 
-                    {plan.tier !== "full" && plan.tier !== "radio" && (
+                    {plan.tier !== "full" && plan.tier !== "radio" && (() => {
+                      const upgradeId = `${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`
+                      const impact = getUpgradeImpact(upgradeId, state)
+                      const ustats = impact ? getUpgradeImpactStats(impact) : null
+                      return (
                       <Link
-                        href={`/plans/upgrade/${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`}
-                        className="flex items-center justify-between rounded-lg border border-accent/30 bg-accent/5 px-4 py-3 transition-colors hover:bg-accent/10"
+                        href={`/plans/upgrade/${upgradeId}`}
+                        className="block rounded-lg border border-accent/30 bg-accent/5 transition-colors hover:bg-accent/10"
                         onClick={() => {
-                          const upgradeId = `${selectedTeam === "blues" ? "blues" : selectedTeam === "cardinals" ? "cards" : "both"}-${plan.tier === "cheapest" ? "cheap-to-value" : "value-to-full"}`
                           trackEvent(AnalyticsEvent.ctaPrimaryClick, {
                             ...analyticsBase("plans", state, {
                               href: `/plans/upgrade/${upgradeId}`,
@@ -531,15 +610,40 @@ export default function PlansPage() {
                           })
                         }}
                       >
-                        <div className="flex items-center gap-2">
-                          <Zap className="size-4 text-accent" />
-                          <span className="text-sm font-medium text-foreground">
-                            {labelGetBestValue()}
-                          </span>
+                        <div className="flex items-center justify-between px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <Zap className="size-4 text-accent" />
+                            <span className="text-sm font-medium text-foreground">
+                              {labelGetBestValue()}
+                            </span>
+                          </div>
+                          <ChevronRight className="size-4 text-accent" />
                         </div>
-                        <ChevronRight className="size-4 text-accent" />
+                        {ustats && ustats.newlyWatchable > 0 && (
+                          <div className="space-y-1 border-t border-accent/15 px-4 py-2.5 text-left">
+                            <p className="text-xs font-semibold text-foreground">
+                              {upgradePrimaryWatchMoreGames(ustats.newlyWatchable)}
+                            </p>
+                            {upgradeCostPerGameCompactLine(ustats.costPerNewGame) && (
+                              <p className="text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400/95">
+                                {upgradeCostPerGameCompactLine(ustats.costPerNewGame)}
+                              </p>
+                            )}
+                            {upgradeCostPerAdditionalGameLine(ustats.costPerNewGame) && (
+                              <p className="text-[11px] text-muted-foreground">
+                                {upgradeCostPerAdditionalGameLine(ustats.costPerNewGame)}
+                              </p>
+                            )}
+                            {upgradeAboutMonthlyMoreLine(ustats.costDelta) && (
+                              <p className="text-[11px] text-muted-foreground">
+                                {upgradeAboutMonthlyMoreLine(ustats.costDelta)}
+                              </p>
+                            )}
+                          </div>
+                        )}
                       </Link>
-                    )}
+                      )
+                    })()}
                   </div>
                 </div>
               </Card>

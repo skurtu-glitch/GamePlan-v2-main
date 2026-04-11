@@ -11,7 +11,10 @@ import type {
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
 import { getEngineGames } from "@/lib/data"
 import type { DemoUserState } from "@/lib/demo-user"
-import { calculateIncrementalPlanValue } from "@/lib/optimizer-engine"
+import {
+  calculateIncrementalPlanValue,
+  getCurrentCoverageBaseline,
+} from "@/lib/optimizer-engine"
 import {
   getAffiliateLink,
   hasAffiliateLanding,
@@ -26,6 +29,7 @@ import {
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 import {
   chooseMonetizedPrimaryLabel,
+  formatUpgradeBeforeAfterWatchableLines,
   isGameWithinHours,
   labelGetBestValuePlan,
   labelReviewDetails,
@@ -36,6 +40,9 @@ import {
   seasonUnlockBanner,
   socialProofMostFans,
   socialProofRecommended,
+  upgradePrimaryWatchMoreGames,
+  upgradeSecondaryFullSeason,
+  upgradeUnlockAdditionalGamesSeason,
   URGENCY_HOURS,
   urgencyTeamLabel,
   valueJustificationBestValue,
@@ -45,7 +52,9 @@ import {
 const MAX_WHY = 2
 
 function decisionMentionsUnlockCount(decision: string): number | null {
-  const m = decision.match(/Unlocks\s+(\d+)\s+more games/i)
+  const m =
+    decision.match(/Unlocks\s+(\d+)\s+more games/i) ??
+    decision.match(/Watch\s+(\d+)\s+more games/i)
   return m ? Number(m[1]) : null
 }
 
@@ -206,8 +215,8 @@ export function formatAssistantDecision(
 
   const m = input.payload
   if (m.missingGames.length === 0) {
-    const { gamesWatchable, totalGames, coveragePercent } = m.baseline
-    return `You can watch ${gamesWatchable} of ${totalGames} games on your schedule (${coveragePercent}% coverage).`
+    const { gamesWatchable, totalGames } = m.baseline
+    return `You can watch ${gamesWatchable} of ${totalGames} games on your schedule in this window.`
   }
   const head =
     m.baseline.coveragePercent < 50
@@ -216,21 +225,21 @@ export function formatAssistantDecision(
   const plan = m.upgradeHint.planId
     ? getOptimizerPlanById(m.upgradeHint.planId)
     : undefined
-  if (
-    plan &&
-    m.upgradeHint.unlockMoreGamesThisSeason > 0 &&
-    m.baseline.coveragePercent > 0 &&
-    plan.coveragePercent > m.baseline.coveragePercent
-  ) {
-    const before = m.baseline.coveragePercent
-    const after = plan.coveragePercent
-    const ratio = after / before
-    const times =
-      ratio >= 1.95 ? `${Math.round(ratio)}×` : `~${ratio.toFixed(1)}×`
-    return `${head} ${m.upgradeHint.planName ?? plan.name} — season catalog: +${m.upgradeHint.unlockMoreGamesThisSeason} watchable games (${before}% live → ${after}% catalog tier, ${times}).`
+  if (plan && m.upgradeHint.unlockMoreGamesThisSeason > 0) {
+    const uw = m.upgradeHint.unlockMoreGamesThisSeason
+    const catalogCurrentWatchable = Math.max(0, plan.gamesWatchable - uw)
+    const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+      catalogCurrentWatchable,
+      plan.gamesWatchable
+    )
+    return `${head} ${m.upgradeHint.planName ?? plan.name}: ${upgradePrimaryWatchMoreGames(
+      uw
+    )}. ${before}. ${after}. ${upgradeSecondaryFullSeason()}.`
   }
   if (m.upgradeHint.unlockMoreGamesThisSeason > 0 && m.upgradeHint.planName) {
-    return `${head} ${m.upgradeHint.planName} — season catalog: +${m.upgradeHint.unlockMoreGamesThisSeason} watchable games.`
+    return `${head} ${m.upgradeHint.planName} — ${upgradePrimaryWatchMoreGames(
+      m.upgradeHint.unlockMoreGamesThisSeason
+    )}.`
   }
   return head
 }
@@ -344,18 +353,14 @@ export function formatAssistantWhy(
     if (!unlockInDecision && best) {
       const inc = calculateIncrementalPlanValue(best, scope, userState)
       if (inc.newlyWatchableGames > 0) {
-        const live = getCurrentUserCoverageSummary(scope, userState)
-        const after = best.coveragePercent
-        const before = live.coveragePercent
-        if (after > before) {
-          out.push(
-            `Season catalog: +${inc.newlyWatchableGames} watchable games (${before}% live on your schedule → ${after}% catalog tier).`
-          )
-        } else {
-          out.push(
-            `Season catalog: +${inc.newlyWatchableGames} watchable games (full-season model).`
-          )
-        }
+        const cat = getCurrentCoverageBaseline(scope, userState)
+        const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+          cat.gamesWatchable,
+          best.gamesWatchable
+        )
+        out.push(
+          `${upgradePrimaryWatchMoreGames(inc.newlyWatchableGames)}. ${upgradeSecondaryFullSeason()}. ${upgradeUnlockAdditionalGamesSeason(inc.newlyWatchableGames)}. ${before}. ${after}.`
+        )
       }
     }
 
@@ -368,8 +373,13 @@ export function formatAssistantWhy(
       if (cheap) {
         const inc = calculateIncrementalPlanValue(cheap, scope, userState)
         if (inc.newlyWatchableGames > 0) {
+          const cat = getCurrentCoverageBaseline(scope, userState)
+          const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+            cat.gamesWatchable,
+            cheap.gamesWatchable
+          )
           out.push(
-            `Season catalog: cheapest tier adds ${inc.newlyWatchableGames} watchable games.`
+            `${upgradePrimaryWatchMoreGames(inc.newlyWatchableGames)} on the cheapest tier. ${before}. ${after}. ${upgradeSecondaryFullSeason()}.`
           )
         }
       }
@@ -417,7 +427,9 @@ export function formatAssistantWhy(
   if (topService) {
     out.push(`Most added games need ${topService}.`)
   } else if (payload.upgradeHint.planName) {
-    out.push(`${payload.upgradeHint.planName} adds the biggest coverage jump.`)
+    out.push(
+      `${payload.upgradeHint.planName} adds the biggest step-up in watchable games on the full season schedule.`
+    )
   } else if (unwatched > 0) {
     out.push(
       `You’re missing ${unwatched} game${unwatched === 1 ? "" : "s"} on your live schedule without full video.`
@@ -429,8 +441,10 @@ export function formatAssistantWhy(
   }
 
   if (out.length < MAX_WHY) {
+    const gw = payload.baseline.gamesWatchable
+    const tg = payload.baseline.totalGames
     out.push(
-      `Live schedule: ${payload.baseline.coveragePercent}% of games watchable on video.`
+      `Live schedule: you can watch ${gw} of ${tg} games on full video with your current setup.`
     )
   }
 

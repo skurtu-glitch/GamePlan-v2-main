@@ -10,6 +10,7 @@ import type { DemoUserState } from "@/lib/demo-user"
 import {
   calculateIncrementalPlanValue,
   classifyRecommendedPlans,
+  getCurrentCoverageBaseline,
 } from "@/lib/optimizer-engine"
 import { teamsForFollowedIds } from "@/lib/data"
 import { followedTeamsScopePhrase } from "@/lib/followed-teams-copy"
@@ -20,7 +21,13 @@ import {
 } from "@/lib/optimizer-plans"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
 import { getPlanBundlePromoSummary } from "@/lib/promotion-pricing"
-import { formatBundlePlusList } from "@/lib/conversion-copy"
+import {
+  formatBundlePlusList,
+  formatUpgradeBeforeAfterWatchableLines,
+  upgradePrimaryWatchMoreGames,
+  upgradeSecondaryFullSeason,
+  upgradeUnlockAdditionalGamesSeason,
+} from "@/lib/conversion-copy"
 
 export const HOME_SUGGESTED_CTA_LABEL = "Review details" as const
 
@@ -37,6 +44,10 @@ export interface HomeInsightCardContent {
   promoFreshnessLine?: string
   /** Catalog services in the focal plan, for bundle clarity. */
   bundleIncludesLine?: string
+  /** Season-catalog upgrade framing (shown under Decision on Home). */
+  upgradeUnlockLine?: string
+  upgradeGamesContextLine?: string
+  upgradeSecondaryLine?: string
   ctaLabel: typeof HOME_SUGGESTED_CTA_LABEL
   ctaHref: string
 }
@@ -51,12 +62,25 @@ export function formatHomeWowMetric(
   return `Across ${followedTeamLabel}: ${summary.gamesWatchable} of ${summary.totalGames} games watchable on your in-app schedule (${summary.coveragePercent}%)`
 }
 
-const HOME_BEST_VALUE_PLAN_HEADLINE =
-  "Watch significantly more of your games with the Best Value plan" as const
-
-function formatAddsAndUnlocksLine(serviceCount: number, unlockSeason: number): string {
-  const svc = serviceCount === 1 ? "service" : "services"
-  return `Adds ${serviceCount} ${svc} · Season catalog: +${unlockSeason} more watchable games (full-season model)`
+function catalogUpgradeContext(
+  scope: OptimizerScope,
+  userState: DemoUserState,
+  plan: OptimizerPlan,
+  unlockSeason: number
+): Pick<
+  HomeInsightCardContent,
+  "upgradeUnlockLine" | "upgradeGamesContextLine" | "upgradeSecondaryLine"
+> {
+  const baseline = getCurrentCoverageBaseline(scope, userState)
+  const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+    baseline.gamesWatchable,
+    plan.gamesWatchable
+  )
+  return {
+    upgradeUnlockLine: upgradeUnlockAdditionalGamesSeason(unlockSeason),
+    upgradeGamesContextLine: `${before}. ${after}.`,
+    upgradeSecondaryLine: upgradeSecondaryFullSeason(),
+  }
 }
 
 const VIDEO_SERVICE_IDS = new Set([
@@ -234,7 +258,7 @@ export function buildHomeSuggestedInsight(
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
       headline: "Fine-tune your stack in the Plan Optimizer",
-      summary: `You're at ${live.coveragePercent}% watchable on your schedule (${live.gamesWatchable} of ${live.totalGames} games). Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up.`,
+      summary: `You can watch ${live.gamesWatchable} of ${live.totalGames} games on your in-app schedule today. Compare “${bestPlan.name}” with Full Coverage to see whether a broader tier is worth the step-up (season catalog in the optimizer).`,
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
@@ -245,11 +269,14 @@ export function buildHomeSuggestedInsight(
       haveNames.length > 0 ? `You already have ${formatConjoinedList(haveNames)}. ` : ""
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
-      headline: HOME_BEST_VALUE_PLAN_HEADLINE,
+      headline: upgradePrimaryWatchMoreGames(unlockSeason),
       summary: `${havePart}Adding ${formatConjoinedList(
         keyAddNames
-      )} fills the key gaps—season catalog: unlocking most of what you’re missing vs full coverage, without paying for the full bundle.`,
-      supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, unlockSeason),
+      )} fills the key gaps—stronger season reach without jumping straight to the full bundle.`,
+      supportingLine: `Adds ${inc.incrementalServices.length} ${
+        inc.incrementalServices.length === 1 ? "service" : "services"
+      } vs your current stack.`,
+      ...catalogUpgradeContext(scope, userState, bestPlan, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
@@ -260,9 +287,12 @@ export function buildHomeSuggestedInsight(
       haveNames.length > 0 ? `You already have ${formatConjoinedList(haveNames)}. ` : ""
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
-      headline: HOME_BEST_VALUE_PLAN_HEADLINE,
-      summary: `${havePart}Adding ${keyAddNames[0]} fills a major gap—season catalog: unlocking most of what you’re missing vs full coverage.`,
-      supportingLine: formatAddsAndUnlocksLine(inc.incrementalServices.length, unlockSeason),
+      headline: upgradePrimaryWatchMoreGames(unlockSeason),
+      summary: `${havePart}Adding ${keyAddNames[0]} fills a major gap for your footprint.`,
+      supportingLine: `Adds ${inc.incrementalServices.length} ${
+        inc.incrementalServices.length === 1 ? "service" : "services"
+      } vs your current stack.`,
+      ...catalogUpgradeContext(scope, userState, bestPlan, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })
@@ -273,17 +303,16 @@ export function buildHomeSuggestedInsight(
       haveNames.length > 0 ? `You already have ${formatConjoinedList(haveNames)}. ` : ""
     const addPart =
       keyAddNames.length > 0
-        ? `Adding ${formatConjoinedList(
-            keyAddNames
-          )} — season catalog estimate: about ${unlockSeason} more watchable games for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
-        : `“${
-            bestPlan.name
-          }” — season catalog estimate: about ${unlockSeason} more watchable games for roughly +$${inc.incrementalCost.toFixed(2)}/mo.`
+        ? `Adding ${formatConjoinedList(keyAddNames)} — about +$${inc.incrementalCost.toFixed(
+            2
+          )}/mo list vs your priced services.`
+        : `“${bestPlan.name}” — about +$${inc.incrementalCost.toFixed(2)}/mo list vs your priced services.`
     return withRecommendedPlanPromo(bestPlan, {
       wowMetricLine,
-      headline: HOME_BEST_VALUE_PLAN_HEADLINE,
+      headline: upgradePrimaryWatchMoreGames(unlockSeason),
       summary: `${havePart}${addPart}`,
       supportingLine: `Best Value pick: ${bestPlan.name}.`,
+      ...catalogUpgradeContext(scope, userState, bestPlan, unlockSeason),
       ctaLabel,
       ctaHref: `/plans/${bestPlan.id}`,
     })

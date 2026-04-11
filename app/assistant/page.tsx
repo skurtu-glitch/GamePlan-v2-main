@@ -644,6 +644,11 @@ function CompactMissingGamesList({ rows }: { rows: MissingGamesAnswer["missingGa
   const rest = rows.length - shown.length
   return (
     <div className="border-t border-border/40 px-4 py-3">
+      <p className="mb-2 text-sm font-semibold leading-snug text-foreground">
+        {rows.length === 1
+          ? "You're currently missing 1 game."
+          : `You're currently missing ${rows.length} games.`}
+      </p>
       <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
         Games missing video
       </p>

@@ -45,10 +45,16 @@ import {
 import {
   chooseMonetizedPrimaryLabel,
   formatBundlePlusList,
+  formatUpgradeBeforeAfterWatchableLines,
   isGameWithinHours,
   labelSeeAllPlans,
   socialProofMostFans,
   socialProofRecommended,
+  upgradeAboutMonthlyMoreLine,
+  upgradeCostPerAdditionalGameLine,
+  upgradePrimaryWatchMoreGames,
+  upgradeSecondaryFullSeason,
+  upgradeUnlockAdditionalGamesSeason,
   URGENCY_HOURS,
   valueJustificationBestValue,
   valueJustificationCheapest,
@@ -187,7 +193,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
       return `Get ${plan.name} for more season-catalog coverage`
     }
     if (unlockDelta > 0) {
-      return `Season catalog: get ${plan.name} to unlock ${unlockDelta} more watchable games`
+      return upgradePrimaryWatchMoreGames(unlockDelta)
     }
     return `Choose ${plan.name} for stronger season coverage`
   }, [plan, isRadioOnlyPre, isLogicBestValuePre, unlockDelta])
@@ -202,12 +208,17 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
       return bullets.slice(0, 2)
     }
     if (unlockDelta > 0) {
+      const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+        currentBaseline.gamesWatchable,
+        plan.gamesWatchable
+      )
+      bullets.push(`${before}. ${after}.`)
       bullets.push(
-        `Season catalog: +${unlockDelta} more watchable games vs your catalog-mapped current setup.`
+        `${upgradeUnlockAdditionalGamesSeason(unlockDelta)}. ${upgradeSecondaryFullSeason()}.`
       )
     } else {
       bullets.push(
-        `Season catalog: ${plan.coveragePercent}% watchable (${plan.gamesWatchable} of ${plan.totalGames} games in the optimizer model).`
+        `Season catalog: ${plan.gamesWatchable} of ${plan.totalGames} games watchable in the optimizer model (same basis as Plans).`
       )
     }
     const canAvoidFull =
@@ -218,14 +229,6 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     if (bullets.length < 2 && canAvoidFull) {
       bullets.push(
         "Avoid paying for full coverage—strong season reach without the full bundle."
-      )
-    } else if (
-      bullets.length < 2 &&
-      unlockDelta > 0 &&
-      currentBaseline.coveragePercent !== plan.coveragePercent
-    ) {
-      bullets.push(
-        `Season catalog: ${currentBaseline.coveragePercent}% → ${plan.coveragePercent}% watchable coverage.`
       )
     } else if (bullets.length < 2) {
       bullets.push(
@@ -240,7 +243,7 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     unlockDelta,
     planRecs.fullCoveragePlanId,
     planId,
-    currentBaseline.coveragePercent,
+    currentBaseline.gamesWatchable,
   ])
 
   useEffect(() => {
@@ -674,12 +677,30 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
                       <div className="flex size-10 items-center justify-center rounded-lg bg-emerald-500/15">
                         <Zap className="size-5 text-emerald-400" />
                       </div>
-                      <div className="flex-1">
+                      <div className="flex-1 space-y-1">
                         <p className="text-sm font-semibold text-foreground">
-                          +{upgradeStats.newlyWatchable} watchable games (season catalog)
+                          {upgradePrimaryWatchMoreGames(upgradeStats.newlyWatchable)}
+                        </p>
+                        {upgradeStats.newlyWatchable > 0 &&
+                          upgradeCostPerAdditionalGameLine(upgradeStats.costPerNewGame) && (
+                            <p className="text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400/95">
+                              {upgradeCostPerAdditionalGameLine(upgradeStats.costPerNewGame)}
+                            </p>
+                          )}
+                        {upgradeAboutMonthlyMoreLine(upgradeStats.costDelta) && (
+                          <p className="text-[11px] text-muted-foreground">
+                            {upgradeAboutMonthlyMoreLine(upgradeStats.costDelta)}
+                          </p>
+                        )}
+                        <p className="text-xs text-muted-foreground">
+                          {upgradeSecondaryFullSeason()}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Upgrade to {upgrade.toPlanName} for +${upgradeStats.costDelta.toFixed(2)}/mo
+                          {upgradeUnlockAdditionalGamesSeason(upgradeStats.newlyWatchable)}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          Upgrade to {upgrade.toPlanName} · list +$
+                          {upgradeStats.costDelta.toFixed(2)}/mo
                         </p>
                       </div>
                       <ChevronRight className="size-5 text-accent" />

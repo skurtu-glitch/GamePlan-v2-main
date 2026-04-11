@@ -88,6 +88,21 @@ export function labelGetBestValuePlan(): string {
   return "Get Best Value plan"
 }
 
+/** Plans list: single optimizer-led highlight (same plan as `bestValuePlanId`). */
+export function labelBestForYourSetup(): string {
+  return "Best for your setup"
+}
+
+/** Under the highlighted plan when catalog unlock vs baseline is positive. */
+export function planListBestForYouUnlockReason(): string {
+  return "This gives you the biggest increase in watchable games."
+}
+
+/** When the highlighted plan has no incremental catalog unlock (already covered). */
+export function planListBestForYouGuidedFallbackReason(): string {
+  return "Our guided pick from your current subscriptions — compare details here first."
+}
+
 /** Home / assistant when the next step is browsing the schedule at `/`. */
 export function labelSeeHomeSchedule(): string {
   return "See your home schedule"
@@ -106,6 +121,63 @@ export function chooseMonetizedPrimaryLabel(opts: {
   if (opts.within24h) return labelWatchTonightsGame()
   if (opts.planName === "Best Value") return labelGetBestValuePlan()
   return labelUnlockMoreGames()
+}
+
+/** Primary upgrade line: season-catalog delta in watchable games. */
+export function upgradePrimaryWatchMoreGames(count: number): string {
+  if (count <= 0) return "Watch more games"
+  return count === 1 ? "Watch 1 more game" : `Watch ${count} more games`
+}
+
+/** Secondary line shared across Home, Plans, Plan detail, and Upgrade. */
+export function upgradeSecondaryFullSeason(): string {
+  return "Based on the full season schedule"
+}
+
+export function upgradeUnlockAdditionalGamesSeason(count: number): string {
+  if (count <= 0) return "Unlock additional games this season"
+  return count === 1
+    ? "Unlock 1 additional game this season"
+    : `Unlock ${count} additional games this season`
+}
+
+function formatUsdAmountTrimmed(amount: number): string {
+  if (!Number.isFinite(amount) || amount < 0) return "0"
+  const x = Math.round(amount * 100) / 100
+  if (Number.isInteger(x)) return String(x)
+  return x.toFixed(2).replace(/\.?0+$/, "")
+}
+
+/**
+ * Full phrasing for upgrade cards / detail (list-price catalog step ÷ newly watchable games).
+ */
+export function upgradeCostPerAdditionalGameLine(costPerNewGame: number): string | null {
+  if (!Number.isFinite(costPerNewGame) || costPerNewGame <= 0) return null
+  return `~$${formatUsdAmountTrimmed(costPerNewGame)} per additional game`
+}
+
+/** Shorter line paired with “Watch N more games” (same dollars as {@link upgradeCostPerAdditionalGameLine}). */
+export function upgradeCostPerGameCompactLine(costPerNewGame: number): string | null {
+  if (!Number.isFinite(costPerNewGame) || costPerNewGame <= 0) return null
+  return `~$${formatUsdAmountTrimmed(costPerNewGame)} per game`
+}
+
+/** Positive list-price monthly delta for an upgrade step. */
+export function upgradeAboutMonthlyMoreLine(monthlyDelta: number): string | null {
+  if (!Number.isFinite(monthlyDelta) || monthlyDelta <= 0) return null
+  return `About +$${formatUsdAmountTrimmed(monthlyDelta)}/month`
+}
+
+export function formatUpgradeBeforeAfterWatchableLines(
+  currentWatchable: number,
+  planWatchable: number
+): { before: string; after: string } {
+  const cg = currentWatchable === 1 ? "game" : "games"
+  const pg = planWatchable === 1 ? "game" : "games"
+  return {
+    before: `You can currently watch ${currentWatchable} ${cg}`,
+    after: `This plan lets you watch ${planWatchable} ${pg}`,
+  }
 }
 
 /**

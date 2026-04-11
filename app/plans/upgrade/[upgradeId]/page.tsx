@@ -43,10 +43,17 @@ import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import {
   chooseMonetizedPrimaryLabel,
   formatBundlePlusList,
+  formatUpgradeBeforeAfterWatchableLines,
   isGameWithinHours,
   labelReviewDetails,
   socialProofMostFans,
   socialProofRecommended,
+  upgradeAboutMonthlyMoreLine,
+  upgradeCostPerAdditionalGameLine,
+  upgradeCostPerGameCompactLine,
+  upgradePrimaryWatchMoreGames,
+  upgradeSecondaryFullSeason,
+  upgradeUnlockAdditionalGamesSeason,
   URGENCY_HOURS,
   valueJustificationBestValue,
   valueJustificationCheapest,
@@ -119,15 +126,26 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
 
   const upgradeDecisionHeadline = useMemo(() => {
     if (!upgrade || !stats || !toPlan) return ""
-    return `Season catalog: get ${upgrade.toPlanName} to unlock ${stats.newlyWatchable} more watchable games`
+    if (stats.newlyWatchable > 0) {
+      return upgradePrimaryWatchMoreGames(stats.newlyWatchable)
+    }
+    return `Move to ${upgrade.toPlanName} on the season catalog`
   }, [upgrade, stats, toPlan])
 
   const upgradeWhyBullets = useMemo(() => {
     if (!upgrade || !stats || !toPlan) return [] as string[]
-    const bullets: string[] = [
-      `${stats.catalogCurrentPercent}% → ${stats.catalogUpgradedPercent}% watchable coverage on the season catalog.`,
-    ]
+    const { before, after } = formatUpgradeBeforeAfterWatchableLines(
+      stats.catalogCurrentWatchable,
+      stats.catalogUpgradedWatchable
+    )
+    const bullets: string[] = [`${before}. ${after}.`]
+    if (stats.newlyWatchable > 0) {
+      bullets.push(
+        `${upgradeUnlockAdditionalGamesSeason(stats.newlyWatchable)} ${upgradeSecondaryFullSeason()}.`
+      )
+    }
     if (
+      bullets.length < 2 &&
       toPlan.tier !== "full" &&
       recs.fullCoveragePlanId != null &&
       recs.fullCoveragePlanId !== upgrade.toPlanId
@@ -135,9 +153,9 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
       bullets.push(
         "Avoid paying for full coverage—this upgrade lands most of the season."
       )
-    } else {
+    } else if (bullets.length < 2 && stats.newlyWatchable > 0) {
       bullets.push(
-        `Season catalog: +${stats.newlyWatchable} watchable games for +$${stats.costDelta.toFixed(2)}/mo list.`
+        `About +$${stats.costDelta.toFixed(2)}/mo list price for this catalog step.`
       )
     }
     return bullets.slice(0, 2)
@@ -306,9 +324,21 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
             </p>
           </div>
           <div className="space-y-4 p-5">
-            <p className="text-sm font-semibold leading-snug text-foreground">
-              {upgradeDecisionHeadline}
-            </p>
+            <div className="space-y-1">
+              <p className="text-sm font-semibold leading-snug text-foreground">
+                {upgradeDecisionHeadline}
+              </p>
+              {stats.newlyWatchable > 0 && upgradeCostPerGameCompactLine(stats.costPerNewGame) && (
+                <p className="text-sm font-medium tabular-nums text-emerald-600 dark:text-emerald-400/95">
+                  {upgradeCostPerGameCompactLine(stats.costPerNewGame)}
+                </p>
+              )}
+              {upgradeAboutMonthlyMoreLine(stats.costDelta) && (
+                <p className="text-xs text-muted-foreground">
+                  {upgradeAboutMonthlyMoreLine(stats.costDelta)}
+                </p>
+              )}
+            </div>
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                 Why
@@ -429,6 +459,14 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 <span className="text-base font-semibold text-muted-foreground">{upgrade.fromPlanName}</span>
                 <span className="text-2xl font-bold text-muted-foreground">{currentPercentage}%</span>
               </div>
+              <p className="mb-2 text-xs leading-snug text-muted-foreground">
+                {
+                  formatUpgradeBeforeAfterWatchableLines(
+                    stats.catalogCurrentWatchable,
+                    stats.catalogUpgradedWatchable
+                  ).before
+                }
+              </p>
               {/* Coverage bar - muted */}
               <div className="mb-2 h-3 overflow-hidden rounded-full bg-muted/30">
                 <div 
@@ -469,6 +507,14 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 <span className="text-base font-semibold text-foreground">{upgrade.toPlanName}</span>
                 <span className="text-2xl font-bold text-emerald-400">{upgradedPercentage}%</span>
               </div>
+              <p className="mb-2 text-xs leading-snug text-emerald-400/85">
+                {
+                  formatUpgradeBeforeAfterWatchableLines(
+                    stats.catalogCurrentWatchable,
+                    stats.catalogUpgradedWatchable
+                  ).after
+                }
+              </p>
               {/* Coverage bar - green */}
               <div className="mb-2 h-3 overflow-hidden rounded-full bg-emerald-500/20">
                 <div 
@@ -502,14 +548,29 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
                 </div>
                 <div>
                   <p className="text-3xl font-bold text-emerald-400">+{stats.newlyWatchable}</p>
-                  <p className="text-xs text-muted-foreground">more catalog watchable games</p>
+                  {stats.newlyWatchable > 0 && (
+                    <p className="text-xs font-semibold leading-snug text-foreground/90">
+                      {upgradePrimaryWatchMoreGames(stats.newlyWatchable)}
+                    </p>
+                  )}
+                  {upgradeCostPerAdditionalGameLine(stats.costPerNewGame) && (
+                    <p className="mt-0.5 text-xs font-medium tabular-nums text-emerald-600 dark:text-emerald-400/95">
+                      {upgradeCostPerAdditionalGameLine(stats.costPerNewGame)}
+                    </p>
+                  )}
+                  {upgradeAboutMonthlyMoreLine(stats.costDelta) && (
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      {upgradeAboutMonthlyMoreLine(stats.costDelta)}
+                    </p>
+                  )}
+                  <p className="mt-1 text-[11px] text-muted-foreground">{upgradeSecondaryFullSeason()}</p>
                 </div>
               </div>
               
               {/* Cost increase */}
               <div className="text-right">
                 <p className="text-xl font-bold text-accent">+${stats.costDelta.toFixed(2)}</p>
-                <p className="text-xs text-muted-foreground">per month</p>
+                <p className="text-xs text-muted-foreground">list price / mo</p>
               </div>
             </div>
           </div>
@@ -538,18 +599,6 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
             </div>
           </Card>
         )}
-
-        {/* Value Framing */}
-        <Card className="mb-6 overflow-hidden border-border p-0">
-          <div className="flex items-center justify-between px-4 py-4">
-            <span className="text-sm text-muted-foreground">
-              Cost per newly catalog-unlocked game
-            </span>
-            <span className="text-xl font-bold text-foreground">
-              ~${stats.costPerNewGame.toFixed(2)}
-            </span>
-          </div>
-        </Card>
 
         {/* Services Added */}
         <section className="mb-6">

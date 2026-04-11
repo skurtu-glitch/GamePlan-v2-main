@@ -72,24 +72,31 @@ export function SetupTeamsStep({
       )}
 
       {league === null ? (
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          {CATALOG_LEAGUES.map((lg) => (
-            <button
-              key={lg}
-              type="button"
-              onClick={() => onLeagueChange(lg)}
-              className={cn(
-                "flex min-h-[100px] flex-col items-start justify-end rounded-xl border-2 border-border bg-gradient-to-br from-secondary/80 to-card p-4 text-left transition-colors",
-                "hover:border-accent/50 hover:from-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-              )}
-            >
-              <span className="text-xl font-bold tracking-tight text-foreground">{lg}</span>
-              <span className="mt-1 text-xs text-muted-foreground">
-                {leagueTeamCount(lg)} teams · tap to pick
-              </span>
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="mt-5 grid grid-cols-2 gap-3">
+            {CATALOG_LEAGUES.map((lg) => (
+              <button
+                key={lg}
+                type="button"
+                onClick={() => onLeagueChange(lg)}
+                className={cn(
+                  "flex min-h-[100px] flex-col items-start justify-end rounded-xl border-2 border-border bg-gradient-to-br from-secondary/80 to-card p-4 text-left transition-colors",
+                  "hover:border-accent/50 hover:from-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                )}
+              >
+                <span className="text-xl font-bold tracking-tight text-foreground">{lg}</span>
+                <span className="mt-1 text-xs text-muted-foreground">
+                  {leagueTeamCount(lg)} teams · tap to pick
+                </span>
+              </button>
+            ))}
+          </div>
+          {canContinue && (
+            <Button type="button" className="mt-5 w-full" onClick={onContinue}>
+              Continue
+            </Button>
+          )}
+        </>
       ) : (
         <div className="mt-5">
           <Button

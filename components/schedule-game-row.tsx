@@ -23,6 +23,7 @@ export function ScheduleGameRow({
   recommendedPlanId,
   analyticsSurface,
   watchEventLabel,
+  onSeePlansNav,
 }: {
   game: Game
   demoState: DemoUserState
@@ -31,6 +32,8 @@ export function ScheduleGameRow({
   recommendedPlanId: string | null | undefined
   analyticsSurface: AnalyticsSourceScreen
   watchEventLabel: string
+  /** Optional hook for soft-auth upsell when opening the plans catalog from this row. */
+  onSeePlansNav?: () => void
 }) {
   const access = resolveGameAccess(game, demoState)
   const rowStatus =
@@ -125,6 +128,7 @@ export function ScheduleGameRow({
                 fixHint ? "mt-1" : ""
               }`}
               onClick={() => {
+                onSeePlansNav?.()
                 trackEvent(AnalyticsEvent.ctaSecondaryClick, {
                   ...analyticsBase(analyticsSurface, demoState, {
                     href: "/plans",

@@ -305,6 +305,10 @@ export default function SettingsPage() {
               You&apos;re not signed in. Your setup is saved in this browser only. Sign in below to
               back it up and use it on other devices.
             </p>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Sign in to save your setup across devices. Your current setup will sync to your
+              account.
+            </p>
           </Card>
         )}
 

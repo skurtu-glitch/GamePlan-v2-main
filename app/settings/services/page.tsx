@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { BottomNav } from "@/components/bottom-nav"
+import { SoftAuthValuePrompt } from "@/components/soft-auth-value-prompt"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
 import {
   ScheduleHydrationSkeleton,
@@ -22,6 +23,7 @@ import {
   Zap,
 } from "lucide-react"
 import { serviceDisplayName } from "@/lib/streaming-service-ids"
+import { consumeSoftAuthNavMomentIf } from "@/lib/soft-auth-prompt"
 import { getEngineGames, teamsForFollowedIds } from "@/lib/data"
 import { resolveGameAccess } from "@/lib/resolve-game-access"
 import type { DemoUserState } from "@/lib/demo-user"
@@ -164,6 +166,12 @@ export default function ConnectedServicesPage() {
   const { state, toggleConnectedService } = useDemoUser()
   const connectedIds = state.connectedServiceIds
   const [selectedService, setSelectedService] = useState<StreamingService | null>(null)
+  const [coverageSoftAuth, setCoverageSoftAuth] = useState(false)
+  const [servicesSoftAuth, setServicesSoftAuth] = useState(false)
+
+  useEffect(() => {
+    if (consumeSoftAuthNavMomentIf("coverage")) setCoverageSoftAuth(true)
+  }, [])
 
   const connectedServices = allServices.filter((s) => connectedIds.includes(s.id))
   const availableServices = allServices.filter((s) => !connectedIds.includes(s.id))
@@ -249,6 +257,7 @@ export default function ConnectedServicesPage() {
             variant={isConnected ? "outline" : "default"}
             onClick={() => {
               toggleConnectedService(selectedService.id)
+              setServicesSoftAuth(true)
               setSelectedService(null)
             }}
           >
@@ -264,6 +273,18 @@ export default function ConnectedServicesPage() {
               </>
             )}
           </Button>
+          <div className="mx-auto max-w-lg px-4 pb-3">
+            <SoftAuthValuePrompt
+              surface="coverage"
+              when={coverageSoftAuth}
+              onDismissed={() => setCoverageSoftAuth(false)}
+            />
+            <SoftAuthValuePrompt
+              surface="services_edit"
+              when={servicesSoftAuth && !coverageSoftAuth}
+              className="mt-2"
+            />
+          </div>
         </main>
 
         <BottomNav />
@@ -364,6 +385,19 @@ export default function ConnectedServicesPage() {
           <p className="text-center text-sm text-muted-foreground">
             Your connected services determine what you can watch. GamePlan uses this to give you personalized coverage insights.
           </p>
+        </div>
+
+        <div className="mx-auto max-w-lg px-4 pb-3">
+          <SoftAuthValuePrompt
+            surface="coverage"
+            when={coverageSoftAuth}
+            onDismissed={() => setCoverageSoftAuth(false)}
+          />
+          <SoftAuthValuePrompt
+            surface="services_edit"
+            when={servicesSoftAuth && !coverageSoftAuth}
+            className="mt-2"
+          />
         </div>
       </main>
 

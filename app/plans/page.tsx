@@ -55,6 +55,7 @@ import {
   valueJustificationBestValue,
   valueJustificationCheapest,
 } from "@/lib/conversion-copy"
+import { consumeSoftAuthNavMoment } from "@/lib/soft-auth-prompt"
 
 function optimizerRoleExplanation(
   planId: string,
@@ -92,6 +93,10 @@ export default function PlansPage() {
     )
     return games.some((g) => isGameWithinHours(g.dateTime, URGENCY_HOURS, now))
   }, [state.followedTeamIds, scheduleVersion])
+
+  useEffect(() => {
+    consumeSoftAuthNavMoment("plans")
+  }, [])
 
   useEffect(() => {
     trackEvent(AnalyticsEvent.decisionShown, {

@@ -1,9 +1,10 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import { useState, useEffect, useMemo, useRef } from "react"
 import Link from "next/link"
 import { AddTeamDialog } from "@/components/add-team-dialog"
 import { BottomNav } from "@/components/bottom-nav"
+import { SoftAuthValuePrompt } from "@/components/soft-auth-value-prompt"
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
@@ -38,6 +39,8 @@ function nextUpcomingGameForTeam(teamId: string, now: Date) {
 export default function TeamsPage() {
   const [mounted, setMounted] = useState(false)
   const [addTeamOpen, setAddTeamOpen] = useState(false)
+  const [showTeamsSoftAuth, setShowTeamsSoftAuth] = useState(false)
+  const followedIdsSnapshot = useRef<string | null>(null)
   const { isHydrating: isScheduleHydrating } = useSchedule()
   const { state, setDemoUserState } = useDemoUser()
   const userTeams = teamsForFollowedIds(state.followedTeamIds)
@@ -66,6 +69,18 @@ export default function TeamsPage() {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    const next = JSON.stringify(state.followedTeamIds)
+    if (followedIdsSnapshot.current === null) {
+      followedIdsSnapshot.current = next
+      return
+    }
+    if (next !== followedIdsSnapshot.current) {
+      followedIdsSnapshot.current = next
+      setShowTeamsSoftAuth(true)
+    }
+  }, [state.followedTeamIds])
 
   const formatDateTime = (dateTime: string) => {
     if (!mounted) return { date: "...", time: "" }
@@ -328,6 +343,10 @@ export default function TeamsPage() {
             </p>
           )}
         </section>
+
+        <div className="mx-auto max-w-lg px-4 pb-3">
+          <SoftAuthValuePrompt surface="teams_edit" when={showTeamsSoftAuth} />
+        </div>
       </main>
 
       <BottomNav />

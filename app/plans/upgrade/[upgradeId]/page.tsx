@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { BottomNav } from "@/components/bottom-nav"
+import { SoftAuthValuePrompt } from "@/components/soft-auth-value-prompt"
 import {
   ArrowLeft,
   ArrowRight,
@@ -51,6 +52,7 @@ import {
   valueJustificationCheapest,
 } from "@/lib/conversion-copy"
 import type { OptimizerScope } from "@/lib/optimizer-plans"
+import { consumeSoftAuthNavMoment } from "@/lib/soft-auth-prompt"
 import { cn } from "@/lib/utils"
 
 function scopeFromPlanId(planId: string): OptimizerScope {
@@ -63,6 +65,10 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
   const { upgradeId } = use(params)
   const router = useRouter()
   const { state } = useDemoUser()
+
+  useEffect(() => {
+    consumeSoftAuthNavMoment("plans")
+  }, [])
 
   const upgrade = getUpgradeImpact(upgradeId)
 
@@ -702,6 +708,10 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
             {planSocialLine}
           </p>
         </div>
+      </div>
+
+      <div className="mx-auto max-w-lg px-4 pb-3">
+        <SoftAuthValuePrompt surface="plans" when={true} />
       </div>
 
       <BottomNav />

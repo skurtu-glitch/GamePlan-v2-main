@@ -37,6 +37,10 @@ import {
   trackEvent,
 } from "@/lib/analytics"
 import {
+  consumeSoftAuthSetupCompleteHomePending,
+  setSoftAuthNavMoment,
+} from "@/lib/soft-auth-prompt"
+import {
   homeGameRowPrimaryLabel,
   isGameWithinHours,
   labelFixMyCoverage,
@@ -49,6 +53,7 @@ import {
   URGENCY_HOURS,
   valueJustificationBestValue,
 } from "@/lib/conversion-copy"
+import { SoftAuthValuePrompt } from "@/components/soft-auth-value-prompt"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import {
@@ -93,11 +98,13 @@ function SuggestedForYouCard({
   demoState,
   recommendedPlanId,
   conversionBanner,
+  onPrimaryCtaNav,
 }: {
   content: HomeInsightCardContent
   demoState: DemoUserState
   recommendedPlanId: string | null
   conversionBanner: string
+  onPrimaryCtaNav?: () => void
 }) {
   useEffect(() => {
     trackEvent(AnalyticsEvent.decisionShown, {
@@ -157,6 +164,7 @@ function SuggestedForYouCard({
           href={content.ctaHref}
           className="block"
           onClick={() => {
+            onPrimaryCtaNav?.()
             trackEvent(AnalyticsEvent.ctaPrimaryClick, {
               ...analyticsBase("home", demoState, {
                 href: content.ctaHref,
@@ -222,6 +230,7 @@ export default function HomePage() {
   const { state } = useDemoUser()
   const { isHydrating: isScheduleHydrating, scheduleVersion } = useSchedule()
   const [mounted, setMounted] = useState(false)
+  const [showPostSetupSoftAuth, setShowPostSetupSoftAuth] = useState(false)
   /** Bumps on an interval so “tonight” vs “upcoming” stays correct across midnight / long sessions. */
   const [scheduleTick, setScheduleTick] = useState(0)
   const hasConnectedServices = state.connectedServiceIds.length > 0
@@ -337,6 +346,12 @@ export default function HomePage() {
     setMounted(true)
   }, [])
 
+  useEffect(() => {
+    if (consumeSoftAuthSetupCompleteHomePending()) {
+      setShowPostSetupSoftAuth(true)
+    }
+  }, [])
+
   const formatTime = (dateTime: string) => {
     if (!mounted) return "..."
     return new Date(dateTime).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
@@ -435,14 +450,15 @@ export default function HomePage() {
                 </p>
                 <Link
                   href="/settings/services"
-                  onClick={() =>
+                  onClick={() => {
+                    setSoftAuthNavMoment("coverage")
                     trackEvent(AnalyticsEvent.connectedServicesClick, {
                       ...analyticsBase("home", state, {
                         href: "/settings/services",
                         label: "Add Services",
                       }),
                     })
-                  }
+                  }}
                 >
                   <Button className="gap-2">
                     {labelFixMyCoverage()}
@@ -716,6 +732,7 @@ export default function HomePage() {
                         recommendedPlanId={homeRecommendations.bestValuePlanId}
                         analyticsSurface="home"
                         watchEventLabel="upcoming_game_card"
+                        onSeePlansNav={() => setSoftAuthNavMoment("plans")}
                       />
                     ))}
                   </div>
@@ -737,6 +754,7 @@ export default function HomePage() {
                         recommendedPlanId={homeRecommendations.bestValuePlanId}
                         analyticsSurface="home"
                         watchEventLabel="upcoming_game_card"
+                        onSeePlansNav={() => setSoftAuthNavMoment("plans")}
                       />
                     ))}
                   </div>
@@ -787,6 +805,11 @@ export default function HomePage() {
               demoState={state}
               recommendedPlanId={homeRecommendations.bestValuePlanId}
               conversionBanner={homeSuggestedConversionBanner}
+              onPrimaryCtaNav={
+                suggestedForYou.ctaHref.includes("/plans/upgrade")
+                  ? () => setSoftAuthNavMoment("plans")
+                  : undefined
+              }
             />
           </section>
         )}
@@ -812,6 +835,9 @@ export default function HomePage() {
             </Link>
           </div>
         )}
+        <div className="mx-auto max-w-lg px-5 pb-2">
+          <SoftAuthValuePrompt surface="setup_complete" when={showPostSetupSoftAuth} />
+        </div>
       </main>
 
       <BottomNav />

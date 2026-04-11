@@ -37,3 +37,34 @@ export function setSetupPrompted(): void {
 export function isSetupPrompted(): boolean {
   return sessionFlagIs(GP_SETUP_PROMPTED_KEY, "1")
 }
+
+/**
+ * After auth from setup, prefer the in-memory profile over an existing cloud row once,
+ * and upsert so the current setup is saved to `profiles`.
+ */
+export const GP_SETUP_CLOUD_PUSH_LOCAL_KEY = "gp_setup_cloud_push_local"
+
+export function setSetupCloudPushLocalIntent(): void {
+  setSessionFlag(GP_SETUP_CLOUD_PUSH_LOCAL_KEY, "1")
+}
+
+/** Returns true once (clears the flag). */
+export function consumeSetupCloudPushLocalIntent(): boolean {
+  if (typeof window === "undefined") return false
+  try {
+    if (sessionStorage.getItem(GP_SETUP_CLOUD_PUSH_LOCAL_KEY) !== "1") return false
+    sessionStorage.removeItem(GP_SETUP_CLOUD_PUSH_LOCAL_KEY)
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function clearSetupCloudPushLocalIntent(): void {
+  if (typeof window === "undefined") return
+  try {
+    sessionStorage.removeItem(GP_SETUP_CLOUD_PUSH_LOCAL_KEY)
+  } catch {
+    // ignore
+  }
+}

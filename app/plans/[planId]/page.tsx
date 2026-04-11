@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { BottomNav } from "@/components/bottom-nav"
+import { SoftAuthValuePrompt } from "@/components/soft-auth-value-prompt"
 import {
   ArrowLeft,
   Tv,
@@ -52,6 +53,7 @@ import {
   valueJustificationBestValue,
   valueJustificationCheapest,
 } from "@/lib/conversion-copy"
+import { consumeSoftAuthNavMoment } from "@/lib/soft-auth-prompt"
 
 type FilterType = "all" | "watchable" | "listen-only" | "unavailable"
 
@@ -101,6 +103,10 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
     () => classifyRecommendedPlans(team, state),
     [team, state]
   )
+
+  useEffect(() => {
+    consumeSoftAuthNavMoment("plans")
+  }, [])
 
   const currentBaseline = useMemo(
     () => getCurrentCoverageBaseline(team, state),
@@ -829,6 +835,10 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
             </Button>
           </Link>
         </div>
+      </div>
+
+      <div className="mx-auto max-w-lg px-4 pb-3">
+        <SoftAuthValuePrompt surface="plans" when={true} />
       </div>
 
       <BottomNav />

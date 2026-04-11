@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useLayoutEffect, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import { useDemoUser } from "@/components/providers/demo-user-provider"
@@ -12,6 +12,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
 
+const GP_SETUP_BANNER_DISMISSED_KEY = "gp_setup_banner_dismissed"
+
 function pathAllowsSoftGate(pathname: string | null): boolean {
   if (!pathname) return false
   if (pathname === "/setup" || pathname.startsWith("/setup/")) return false
@@ -21,7 +23,7 @@ function pathAllowsSoftGate(pathname: string | null): boolean {
 
 /**
  * Non-blocking setup guidance: one auto-redirect to `/setup` per session (any entry route);
- * defer skips further redirects; banner CTA remains until setup is complete.
+ * defer skips further redirects; dismiss hides the banner for the session until setup completes.
  */
 export function SetupSoftGate() {
   const pathname = usePathname()
@@ -29,9 +31,27 @@ export function SetupSoftGate() {
   const { state, hydrated, remoteReady } = useDemoUser()
   const [bannerDismissed, setBannerDismissed] = useState(false)
 
+  useLayoutEffect(() => {
+    if (typeof window === "undefined") return
+    try {
+      if (sessionStorage.getItem(GP_SETUP_BANNER_DISMISSED_KEY) === "true") {
+        setBannerDismissed(true)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+
   useEffect(() => {
+    if (!state.hasCompletedSetup) return
+    if (typeof window === "undefined") return
+    try {
+      sessionStorage.removeItem(GP_SETUP_BANNER_DISMISSED_KEY)
+    } catch {
+      // ignore
+    }
     setBannerDismissed(false)
-  }, [pathname])
+  }, [state.hasCompletedSetup])
 
   useEffect(() => {
     if (!hydrated || !remoteReady) return
@@ -67,7 +87,14 @@ export function SetupSoftGate() {
           type="button"
           aria-label="Dismiss setup reminder"
           className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-secondary hover:text-foreground"
-          onClick={() => setBannerDismissed(true)}
+          onClick={() => {
+            try {
+              sessionStorage.setItem(GP_SETUP_BANNER_DISMISSED_KEY, "true")
+            } catch {
+              // ignore
+            }
+            setBannerDismissed(true)
+          }}
         >
           <X className="size-4" />
         </button>

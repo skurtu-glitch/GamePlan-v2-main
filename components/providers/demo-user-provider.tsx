@@ -37,8 +37,10 @@ import {
   upsertProfileForUser,
   upsertProfileForUserWithResult,
 } from "@/lib/persistence/supabase-profile"
+import { consumeSetupCloudPushLocalIntent } from "@/lib/setup-session"
 import { getSupabaseBrowserClient } from "@/lib/supabase/client"
 import { useSupabaseAuth } from "@/components/providers/supabase-auth-provider"
+import { toast } from "@/hooks/use-toast"
 
 export type PersistenceMode = "local" | "cloud"
 export type CloudSyncStatus = "idle" | "syncing" | "saved" | "error"
@@ -134,16 +136,38 @@ export function DemoUserProvider({ children }: { children: ReactNode }) {
     ;(async () => {
       const remote = await fetchProfileForUser(supabase, uid)
       if (cancelled) return
+      const pushLocalSetup = consumeSetupCloudPushLocalIntent()
+      let authSyncToast: "loaded" | "saved" | null = null
       if (remote) {
-        setState(withSyncedSubscriptionFields(remote))
+        if (pushLocalSetup) {
+          const next = withSyncedSubscriptionFields(stateRef.current)
+          setState(next)
+          await upsertProfileForUser(supabase, uid, next)
+          authSyncToast = "saved"
+        } else {
+          setState(withSyncedSubscriptionFields(remote))
+          authSyncToast = "loaded"
+        }
       } else {
         setState((prev) => {
           const next = withSyncedSubscriptionFields(prev)
           void upsertProfileForUser(supabase, uid, next)
           return next
         })
+        if (pushLocalSetup) authSyncToast = "saved"
       }
-      if (!cancelled) setRemoteReady(true)
+      if (!cancelled) {
+        if (authSyncToast === "loaded") {
+          toast({
+            title: "Loaded your saved setup from your account",
+          })
+        } else if (authSyncToast === "saved") {
+          toast({
+            title: "Your setup has been saved to your account",
+          })
+        }
+        setRemoteReady(true)
+      }
     })()
 
     return () => {

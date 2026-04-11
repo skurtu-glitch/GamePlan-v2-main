@@ -70,7 +70,7 @@ export default function UpgradeImpactPage({ params }: { params: Promise<{ upgrad
     consumeSoftAuthNavMoment("plans")
   }, [])
 
-  const upgrade = getUpgradeImpact(upgradeId)
+  const upgrade = getUpgradeImpact(upgradeId, state)
 
   const stats = useMemo(
     () => (upgrade ? getUpgradeImpactStats(upgrade) : null),

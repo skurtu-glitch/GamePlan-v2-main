@@ -657,6 +657,11 @@ function CompactMissingGamesList({ rows }: { rows: MissingGamesAnswer["missingGa
             <span className="mt-0.5 block text-[11px] text-muted-foreground">
               {g.dateLabel} · {g.status === "listen-only" ? "Listen only" : "No video"}
             </span>
+            {g.reason?.trim() ? (
+              <span className="mt-1 block line-clamp-2 text-[11px] leading-snug text-muted-foreground/90">
+                {g.reason.trim()}
+              </span>
+            ) : null}
           </li>
         ))}
       </ul>

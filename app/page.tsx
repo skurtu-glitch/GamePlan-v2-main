@@ -416,6 +416,12 @@ export default function HomePage() {
 
   const heroContent = getCoverageHero()
 
+  const showTonightCoverageCard =
+    !scheduleBlocked && tonightsGames.length > 0 && coverageState !== "no_services"
+  const locationRulesHint = state.preferences.regionalLocationEnabled
+    ? "Availability is based on your saved location"
+    : "Regional availability rules are turned off"
+
   return (
     <div className="min-h-screen bg-background pb-24">
       {/* Header */}
@@ -499,9 +505,7 @@ export default function HomePage() {
         )}
 
         {/* COVERAGE HERO - Shows for all states with games */}
-        {!scheduleBlocked &&
-          tonightsGames.length > 0 &&
-          coverageState !== "no_services" && (
+        {showTonightCoverageCard && (
           <section className="mb-6">
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="border-b border-border/50 bg-secondary/30 px-4 py-3">
@@ -510,6 +514,9 @@ export default function HomePage() {
                 </h2>
                 <p className="mt-0.5 text-[11px] text-muted-foreground">
                   {followedTeamNamesPlus(state.followedTeamIds)} · today
+                </p>
+                <p className="mt-1 text-[10px] leading-snug text-muted-foreground/85">
+                  {locationRulesHint}
                 </p>
               </div>
               <div className="p-5">
@@ -588,9 +595,7 @@ export default function HomePage() {
         )}
 
         {/* Tonight’s games — directly under coverage; no separate section title */}
-        {!scheduleBlocked &&
-          tonightsGames.length > 0 &&
-          coverageState !== "no_services" && (
+        {showTonightCoverageCard && (
           <section className="mb-8">
             <Card className="overflow-hidden border-border bg-card p-0">
               <div className="divide-y divide-border/50">
@@ -702,6 +707,11 @@ export default function HomePage() {
               <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                 {coverageState === "no_games" ? "Coming Up" : "Upcoming Games"}
               </h2>
+              {!showTonightCoverageCard && (
+                <p className="text-[10px] leading-snug text-muted-foreground/85">
+                  {locationRulesHint}
+                </p>
+              )}
               <p className="text-[11px] text-muted-foreground">
                 {followedTeamNamesPlus(state.followedTeamIds)} ·{" "}
                 {followedTeamsScopePhrase(state.followedTeamIds)}

@@ -1,6 +1,7 @@
 import {
   describeWatchProviderRow,
   evaluateVideoAccess,
+  marketHeuristicsActive,
   missingVideoProviders,
   videoProviderIdsViableForLocation,
 } from "@/lib/access-rules"
@@ -86,7 +87,9 @@ function buildWatchOptions(
         provider: label,
         available: canWatch,
         reason: canWatch
-          ? "Included with your connected services — valid for this game in your area."
+          ? marketHeuristicsActive(game, userState)
+            ? "Included with your connected services — this feed still qualifies after your saved home-market rules."
+            : "Included with your connected services for this game’s listed feeds."
           : "Not available with your current plan — add in Connected Services",
         hasSubscription: canWatch,
       },
@@ -126,7 +129,9 @@ function buildWatchVerdict(
   if (resolved.status === "watchable") {
     const reasons: string[] = [
       carrierLine,
-      "Your Connected Services include at least one provider that unlocks this feed.",
+      marketHeuristicsActive(game, userState)
+        ? "Your Connected Services include at least one listed feed that still qualifies after your saved ZIP/city/state home-market rules."
+        : "Your Connected Services include at least one provider that matches this game’s listed feeds (regional market rules are off or your market couldn’t be inferred).",
     ]
     if (game.watch.note) reasons.push(game.watch.note)
     reasons.push(`Audio: you can still follow on ${listenProvider(game)}.`)

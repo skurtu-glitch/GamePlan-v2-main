@@ -2,8 +2,9 @@
  * Plan Details **sample-game** coverage (deterministic slice), built the same way as Home / Game Detail:
  *
  * 1. Load `servicesIncluded` from the catalog plan (`optimizer-plans.ts`).
- * 2. Build a `DemoUserState` whose **only** entitlement change is `connectedServiceIds = servicesIncluded`
- *    (location/prefs stay at demo defaults — same resolver inputs as the rest of the app aside from services).
+ * 2. Build a `DemoUserState` whose entitlement change is `connectedServiceIds = servicesIncluded`.
+ *    When a live user is passed to {@link getPlanCoverage}, their saved `location` and
+ *    `preferences.regionalLocationEnabled` are merged so sample rows match Home/Game Detail market behavior.
  * 3. For each fixed sample `Game`, run `resolveGameAccess(game, simulatedState)` and map the result.
  *
  * **No plan-tier branching** assigns watch/listen/unavailable; status always comes from the resolver.
@@ -350,11 +351,12 @@ function fallbackPlanName(planId: string): string {
 
 export function getPlanCoverage(
   planId: string,
-  teamFilter: "blues" | "cardinals" | "both"
+  teamFilter: "blues" | "cardinals" | "both",
+  liveUser?: DemoUserState
 ): PlanCoverage {
   const catalog = getOptimizerPlanById(planId)
   const planName = catalog?.name ?? fallbackPlanName(planId)
-  const userState = buildSimulatedDemoUserStateForPlan(planId)
+  const userState = buildSimulatedDemoUserStateForPlan(planId, liveUser)
 
   const gameList = getSampleGamesForScope(teamFilter)
 

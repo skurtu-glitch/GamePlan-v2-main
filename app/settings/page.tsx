@@ -26,6 +26,10 @@ import {
 } from "lucide-react"
 import { teamsForFollowedIds } from "@/lib/data"
 import { getCurrentUserCoverageSummary } from "@/lib/current-user-coverage"
+import {
+  homeMarketAreaLabel,
+  resolveUserHomeMarket,
+} from "@/lib/market-regions"
 import { useScheduleOptional } from "@/components/providers/schedule-provider"
 
 const PIPELINE_DEBUG = process.env.NEXT_PUBLIC_GAMEPLAN_PIPELINE_DEBUG === "1"
@@ -194,6 +198,17 @@ export default function SettingsPage() {
     followedTeams.length > 0
       ? followedTeams.map((t) => `${t.city} ${t.name}`).join(" · ")
       : "No teams selected"
+
+  const regionalMarketHintLine = useMemo(() => {
+    if (!state.preferences.regionalLocationEnabled) {
+      return "Regional availability rules are turned off"
+    }
+    const market = resolveUserHomeMarket(state.location)
+    if (market) {
+      return `Using regional rules for the ${homeMarketAreaLabel(market)}`
+    }
+    return "Location saved, but regional availability may be approximate"
+  }, [state.location, state.preferences.regionalLocationEnabled])
 
   const connectedCount = state.connectedServiceIds.length
 
@@ -457,6 +472,9 @@ export default function SettingsPage() {
                 <Button type="button" className="w-full" onClick={applyLocation}>
                   Save location
                 </Button>
+                <p className="mt-2 text-[10px] leading-snug text-muted-foreground/90">
+                  {regionalMarketHintLine}
+                </p>
               </div>
             </div>
 
@@ -479,7 +497,9 @@ export default function SettingsPage() {
                     Use location for regional rules
                   </p>
                   <p className="text-xs text-muted-foreground">
-                    When off, market-specific video rules are not applied from your saved address.
+                    When on, we use your saved ZIP/city/state for simple home-market vs. national/regional
+                    feed checks on the live schedule (demo model, not full league blackouts). When off,
+                    only your Connected Services are matched to each game’s listed feeds.
                   </p>
                 </div>
                 <div

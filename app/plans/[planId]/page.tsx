@@ -96,9 +96,9 @@ export default function PlanDetailPage({ params }: { params: Promise<{ planId: s
   const plan = getOptimizerPlanById(planId)
   const bundlePromo = useMemo(() => (plan ? getPlanBundlePromoSummary(plan) : null), [plan])
   const team = getTeamFromPlanId(planId)
-  const coverage = getPlanCoverage(planId, team)
+  const coverage = getPlanCoverage(planId, team, state)
   const sampleStats = getCoverageStats(coverage)
-  const availableUpgrades = getUpgradesFromPlan(planId)
+  const availableUpgrades = getUpgradesFromPlan(planId, state)
   const planRecs = useMemo(
     () => classifyRecommendedPlans(team, state),
     [team, state]

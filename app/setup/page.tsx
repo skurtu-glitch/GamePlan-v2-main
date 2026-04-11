@@ -219,7 +219,8 @@ export default function SetupPage() {
           <Card className="border-border p-5">
             <h2 className="text-lg font-semibold text-foreground">Your home ZIP</h2>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              Location helps show local games and blackout restrictions accurately.
+              We use your ZIP (and optional city/state) for simple regional streaming hints on the
+              schedule—turn “Regional location” off anytime to match feeds by subscriptions only.
             </p>
             <div className="mt-5 space-y-2">
               <Label htmlFor="setup-zip">ZIP code (required)</Label>
@@ -265,7 +266,8 @@ export default function SetupPage() {
               <div className="min-w-0 pr-2">
                 <p className="text-sm font-medium text-foreground">Regional location</p>
                 <p className="text-xs text-muted-foreground">
-                  Use my ZIP for regional schedules, local listings, and blackout context.
+                  When on, home-market vs. national/regional checks use your saved address (MVP rules,
+                  not a full blackout map). When off, we skip those hints.
                 </p>
               </div>
               <Switch

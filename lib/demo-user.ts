@@ -25,8 +25,9 @@ export interface DemoUserPreferences {
   notificationsEnabled: boolean
   darkMode: boolean
   /**
-   * Persisted for Settings; reserved for future regional / market behavior.
-   * Does not change resolver output in this MVP.
+   * When true, `lib/access-rules` applies simple ZIP/city/state → home-market heuristics
+   * (see `lib/market-regions.ts`) on top of subscription matching. When false, market filters
+   * are skipped and only entitlements vs. listed feeds are evaluated.
    */
   regionalLocationEnabled: boolean
 }

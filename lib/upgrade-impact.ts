@@ -1,3 +1,4 @@
+import type { DemoUserState } from "@/lib/demo-user"
 import {
   getMonthlyUpgradeDelta,
   getOptimizerPlanById,
@@ -115,14 +116,15 @@ function watchProviderAfterUpgrade(toRow: GameCoverage): string {
  */
 export function computeUnlockedGamesForUpgrade(
   fromPlanId: string,
-  toPlanId: string
+  toPlanId: string,
+  liveUser?: DemoUserState
 ): UnlockedGame[] {
   const scope = teamFilterForPlan(fromPlanId)
   const toScope = teamFilterForPlan(toPlanId)
   if (!scope || scope !== toScope) return []
 
-  const fromCov = getPlanCoverage(fromPlanId, scope)
-  const toCov = getPlanCoverage(toPlanId, scope)
+  const fromCov = getPlanCoverage(fromPlanId, scope, liveUser)
+  const toCov = getPlanCoverage(toPlanId, scope, liveUser)
   const toById = new Map(toCov.games.map((g) => [g.id, g]))
   const out: UnlockedGame[] = []
 
@@ -148,10 +150,14 @@ export function computeUnlockedGamesForUpgrade(
   return out
 }
 
-function buildUpgradeImpact(def: UpgradeDef): UpgradeImpact {
+function buildUpgradeImpact(def: UpgradeDef, liveUser?: DemoUserState): UpgradeImpact {
   const from = getOptimizerPlanById(def.fromPlanId)
   const to = getOptimizerPlanById(def.toPlanId)
-  const allUnlocked = computeUnlockedGamesForUpgrade(def.fromPlanId, def.toPlanId)
+  const allUnlocked = computeUnlockedGamesForUpgrade(
+    def.fromPlanId,
+    def.toPlanId,
+    liveUser
+  )
   return {
     id: def.id,
     fromPlanId: def.fromPlanId,
@@ -165,10 +171,13 @@ function buildUpgradeImpact(def: UpgradeDef): UpgradeImpact {
   }
 }
 
-export function getUpgradeImpact(upgradeId: string): UpgradeImpact | undefined {
+export function getUpgradeImpact(
+  upgradeId: string,
+  liveUser?: DemoUserState
+): UpgradeImpact | undefined {
   const def = UPGRADE_DEFS.find((u) => u.id === upgradeId)
   if (!def) return undefined
-  return buildUpgradeImpact(def)
+  return buildUpgradeImpact(def, liveUser)
 }
 
 /** Upgrade Impact page id whose destination catalog plan matches `toPlanId` (e.g. `both-value` → `both-cheap-to-value`). */
@@ -176,8 +185,13 @@ export function getUpgradeImpactIdForDestinationPlan(toPlanId: string): string |
   return UPGRADE_DEFS.find((u) => u.toPlanId === toPlanId)?.id
 }
 
-export function getUpgradesFromPlan(planId: string): UpgradeImpact[] {
-  return UPGRADE_DEFS.filter((u) => u.fromPlanId === planId).map(buildUpgradeImpact)
+export function getUpgradesFromPlan(
+  planId: string,
+  liveUser?: DemoUserState
+): UpgradeImpact[] {
+  return UPGRADE_DEFS.filter((u) => u.fromPlanId === planId).map((d) =>
+    buildUpgradeImpact(d, liveUser)
+  )
 }
 
 export interface UpgradeImpactStats {

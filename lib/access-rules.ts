@@ -36,6 +36,16 @@ function effectiveUserHomeMarket(userState: DemoUserState) {
   return resolveUserHomeMarket(userState.location)
 }
 
+/**
+ * True when we have both a resolved user market and a mapped home-team market for this game —
+ * i.e. regional heuristics may change outcomes beyond raw entitlements.
+ */
+export function marketHeuristicsActive(game: Game, userState: DemoUserState): boolean {
+  return (
+    effectiveUserHomeMarket(userState) !== null && hasMappedHomeTeamMarket(game)
+  )
+}
+
 export function userEntitledToService(userState: DemoUserState, serviceId: string): boolean {
   return userState.connectedServiceIds.includes(serviceId)
 }
@@ -124,7 +134,7 @@ function applyMarketAwareMatchedFilter(
       return {
         effective,
         message:
-          "National streaming often isn’t available for this game in the home market—regional coverage may apply.",
+          "Regional coverage applies for this game. National streaming is often limited in the home broadcast area for matchups like this.",
       }
     }
     return { effective }
@@ -137,7 +147,7 @@ function applyMarketAwareMatchedFilter(
     return {
       effective,
       message:
-        "Regional networks usually focus on the home market—a national or bundle feed may work better from where you are.",
+        "This game is likely unavailable on this service in your area. Regional networks usually focus on the home broadcast market rather than where you’re watching from.",
     }
   }
   return { effective }
@@ -159,7 +169,9 @@ export function describeWatchProviderRow(
     return {
       canOpenWatch: true,
       subscribed: true,
-      reason: "Included with your connected services — valid for this game in your area.",
+      reason: marketHeuristicsActive(game, userState)
+        ? "Included with your connected services — this feed still qualifies after your saved home-market rules."
+        : "Included with your connected services for this game’s listed feeds.",
     }
   }
 
@@ -181,9 +193,9 @@ export function describeWatchProviderRow(
   if (!rulesApply) {
     reason = `You have ${serviceDisplayName(serviceId)}, but it isn’t unlocking this feed for this game with the info we have—try another listed option or Connected Services.`
   } else if (inHomeMarket && kind === "national") {
-    reason = `You have ${serviceDisplayName(serviceId)}, but feeds like this usually aren’t available for home-market games in your area—regional coverage may apply.`
+    reason = `You have ${serviceDisplayName(serviceId)}, but regional coverage applies for this game—national feeds are often limited in the home broadcast area.`
   } else if (!inHomeMarket && kind === "regional") {
-    reason = `You have ${serviceDisplayName(serviceId)}, but regional coverage for this game typically applies around the venue—not from your current location.`
+    reason = `You have ${serviceDisplayName(serviceId)}, but this game is likely unavailable on this service in your area—regional networks usually target the home market.`
   } else if (inHomeMarket && kind === "bundle") {
     reason = `You have ${serviceDisplayName(serviceId)}, but this game isn’t available on that path here—check the provider for local channel availability.`
   } else {

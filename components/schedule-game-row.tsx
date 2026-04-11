@@ -121,7 +121,10 @@ export function ScheduleGameRow({
         </Link>
         {rowStatus !== "watchable" && (
           <div className="border-t border-border/40 px-3 py-2 text-xs text-muted-foreground">
-            {fixHint && <p>{fixHint}</p>}
+            {access.reason && (
+              <p className="leading-snug text-muted-foreground">{access.reason}</p>
+            )}
+            {fixHint && <p className={access.reason ? "mt-1" : ""}>{fixHint}</p>}
             <Link
               href="/plans"
               className={`inline-flex items-center gap-1 font-medium text-accent ${

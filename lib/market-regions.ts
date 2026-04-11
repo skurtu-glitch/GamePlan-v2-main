@@ -144,3 +144,25 @@ export function resolveUserHomeMarket(location: DemoLocation): HomeMarketCode | 
 
   return null
 }
+
+/** User-facing area label for Settings / copy only (does not affect {@link resolveUserHomeMarket}). */
+export function homeMarketAreaLabel(code: HomeMarketCode): string {
+  switch (code) {
+    case "stl":
+      return "St. Louis area"
+    case "den":
+      return "Denver area"
+    case "chi":
+      return "Chicago area"
+    case "ny":
+      return "New York area"
+    case "dal":
+      return "Dallas area"
+    case "pit":
+      return "Pittsburgh area"
+    case "cin":
+      return "Cincinnati area"
+    case "mil":
+      return "Milwaukee area"
+  }
+}

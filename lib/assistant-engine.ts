@@ -58,6 +58,8 @@ export interface MissingGameRow {
   label: string
   dateLabel: string
   status: "listen-only" | "not-available"
+  /** Same `reason` as {@link resolveGameAccess} (video context for non-watchable). */
+  reason?: string
 }
 
 export interface MissingGamesAnswer {
@@ -307,6 +309,7 @@ export function answerMissingGamesQuestion(
       label: formatMatchup(game),
       dateLabel: formatGameDateLabel(game.dateTime),
       status: r.status === "listen-only" ? "listen-only" : "not-available",
+      reason: r.reason,
     })
   }
 
@@ -335,6 +338,11 @@ export function answerMissingGamesQuestion(
     reasons.push(
       `${missing.length} game(s) in this window are not fully watchable on video — see the list below.`
     )
+    if (userState.preferences.regionalLocationEnabled) {
+      reasons.push(
+        "Some rows can be listen-only or blocked because of simple home-market vs. national/regional feed rules from your saved address—the same check Home uses—not only because a service is missing."
+      )
+    }
     if (bestPlan && unlockMoreGamesThisSeason > 0) {
       reasons.push(
         `Season catalog (full-season model): “${bestPlan.name}” could add about ${unlockMoreGamesThisSeason} more watchable games vs the catalog baseline (≈ +$${incrementalCost.toFixed(2)}/mo vs your priced services).`

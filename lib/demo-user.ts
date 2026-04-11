@@ -38,6 +38,10 @@ export const DEFAULT_FOLLOWED_TEAM_IDS: readonly string[] = [
 ]
 
 export interface DemoUserState {
+  /** When false, the app may guide users through first-run setup (non-blocking). */
+  hasCompletedSetup: boolean
+  /** Increment when the setup flow meaningfully changes (optional, for migrations / analytics). */
+  setupVersion?: number
   /**
    * Canonical entitlements for MVP+. Prefer updating subscriptions; `connectedServiceIds` is kept in
    * lockstep for existing resolver/optimizer code paths.
@@ -118,6 +122,8 @@ export function defaultDemoUserCore(): Omit<
   "subscriptions" | "connectedServiceIds"
 > {
   return {
+    hasCompletedSetup: false,
+    setupVersion: 1,
     followedTeamIds: [...DEFAULT_FOLLOWED_TEAM_IDS],
     location: {
       city: "St. Louis",
@@ -177,7 +183,19 @@ export function mergeDemoUserState(
       ? followedRaw.filter((id): id is string => typeof id === "string")
       : [...base.followedTeamIds]
 
+  const hasCompletedSetup: boolean =
+    "hasCompletedSetup" in parsed && typeof parsed.hasCompletedSetup === "boolean"
+      ? parsed.hasCompletedSetup
+      : true
+
+  const setupVersion: number | undefined =
+    typeof parsed.setupVersion === "number" && Number.isFinite(parsed.setupVersion)
+      ? parsed.setupVersion
+      : base.setupVersion
+
   const draft: DemoUserState = {
+    hasCompletedSetup,
+    setupVersion,
     subscriptions,
     connectedServiceIds: [],
     followedTeamIds,

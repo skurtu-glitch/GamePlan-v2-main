@@ -27,7 +27,13 @@ export default function SignInPage() {
       setError(err)
       return
     }
-    router.replace("/settings")
+    const raw =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("next")
+        : null
+    const next =
+      raw && raw.startsWith("/") && !raw.startsWith("//") ? raw : "/settings"
+    router.replace(next)
   }
 
   return (

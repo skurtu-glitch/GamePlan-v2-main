@@ -12,7 +12,12 @@ export const GP_PROFILE_SAVED_KEY = "__gp_saved" as const
  */
 export type GamePlanProfilePayload = Pick<
   DemoUserState,
-  "subscriptions" | "location" | "preferences" | "followedTeamIds"
+  | "subscriptions"
+  | "location"
+  | "preferences"
+  | "followedTeamIds"
+  | "hasCompletedSetup"
+  | "setupVersion"
 > & {
   [GP_PROFILE_SAVED_KEY]?: true
 }
@@ -24,13 +29,18 @@ export function rawPayloadHasAccountSnapshot(payload: unknown): boolean {
 }
 
 export function stateToProfilePayload(state: DemoUserState): GamePlanProfilePayload {
-  return {
+  const payload: GamePlanProfilePayload = {
     subscriptions: state.subscriptions,
     location: state.location,
     preferences: state.preferences,
     followedTeamIds: state.followedTeamIds,
+    hasCompletedSetup: state.hasCompletedSetup,
     [GP_PROFILE_SAVED_KEY]: true,
   }
+  if (state.setupVersion !== undefined) {
+    payload.setupVersion = state.setupVersion
+  }
+  return payload
 }
 
 /** Apply a DB payload on top of `fallback` (e.g. local snapshot before first remote load). */
